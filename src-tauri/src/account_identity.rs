@@ -62,7 +62,10 @@ fn capitalize(value: &str) -> String {
 fn claude_identity(dir: Option<PathBuf>) -> Option<ProviderAccountIdentity> {
     let path = match dir {
         Some(dir) => dir.join(".claude.json"),
-        None => home()?.join(".claude.json"),
+        None => match crate::harness::default_config_dir_env("CLAUDE_CONFIG_DIR") {
+            Some(dir) => dir.join(".claude.json"),
+            None => home()?.join(".claude.json"),
+        },
     };
     parse_claude_identity(&read_json(&path)?)
 }
@@ -84,8 +87,7 @@ fn parse_claude_identity(config: &Value) -> Option<ProviderAccountIdentity> {
 fn codex_identity(dir: Option<PathBuf>) -> Option<ProviderAccountIdentity> {
     let dir = match dir {
         Some(dir) => dir,
-        None => std::env::var_os("CODEX_HOME")
-            .map(PathBuf::from)
+        None => crate::harness::default_config_dir_env("CODEX_HOME")
             .or_else(|| home().map(|home| home.join(".codex")))?,
     };
     parse_codex_identity(&read_json(&dir.join("auth.json"))?)

@@ -494,6 +494,9 @@ fn claude_credentials_path(config_dir: Option<&std::path::Path>) -> Option<PathB
     if let Some(dir) = config_dir {
         return Some(dir.join(".credentials.json"));
     }
+    if let Some(dir) = crate::harness::default_config_dir_env("CLAUDE_CONFIG_DIR") {
+        return Some(dir.join(".credentials.json"));
+    }
     let home = dirs_home().or_else(|| {
         std::env::var_os("USERPROFILE").map(|value| value.to_string_lossy().into_owned())
     })?;

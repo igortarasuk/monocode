@@ -424,6 +424,8 @@ pub fn run() {
             harness::harness_sse_close,
             harness::harness_exec,
             harness::provider_account_remove,
+            harness::provider_account_config_dir,
+            harness::provider_account_set_config_dir,
             account_identity::provider_account_identity,
             pi_usage::fetch_pi_usage,
             rate_limits::fetch_claude_usage,

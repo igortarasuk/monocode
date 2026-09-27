@@ -193,8 +193,8 @@ pub fn claude_shell_commands(
     }
     let config_dir = match provider_account_id.as_deref() {
         Some(id) if id != "default" => crate::harness::provider_account_path(&app, "claude", id)?,
-        _ => match std::env::var_os("CLAUDE_CONFIG_DIR") {
-            Some(path) => PathBuf::from(path),
+        _ => match crate::harness::default_config_dir_env("CLAUDE_CONFIG_DIR") {
+            Some(path) => path,
             None => {
                 PathBuf::from(dirs_home().ok_or("Home directory is unavailable")?).join(".claude")
             }

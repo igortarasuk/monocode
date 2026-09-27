@@ -162,6 +162,7 @@ import {
 } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import { loginHarness } from "../../../integrations/harness/core/auth";
+import { readProviderAccountIdentity } from "../../providers/model/providerAccountIdentity";
 import {
   defaultModelId,
   firstEnabledHarness,
@@ -182,7 +183,7 @@ import {
   projectKey,
   projectName,
 } from "../../../shared/lib/paths";
-import { revealPath } from "../../../platform/tauri/fs";
+import { pickFolders, revealPath } from "../../../platform/tauri/fs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import {
   loadArchivedProjects,
@@ -216,7 +217,11 @@ import {
   type ProviderAccount,
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
-import { removeProviderAccountCredentials } from "../../providers/model/providerAccountCredentials";
+import {
+  readProviderAccountConfigDir,
+  removeProviderAccountCredentials,
+  setProviderAccountConfigDir,
+} from "../../providers/model/providerAccountCredentials";
 import {
   identityKey,
   identityOrganizationTag,
@@ -2720,7 +2725,10 @@ function binaryInspectionError(
   inspection: HarnessBinaryInspection,
 ): string | null {
   if (inspection.error) return inspection.error;
-  if (provider === "codex" && !/^codex-cli\s+\d+\.\d+\.\d+/.test(inspection.version ?? "")) {
+  if (
+    provider === "codex" &&
+    !/^codex-cli\s+\d+\.\d+\.\d+/.test(inspection.version ?? "")
+  ) {
     return "Codex CLI returned an invalid version.";
   }
   if (provider === "opencode") {
@@ -2854,7 +2862,9 @@ function ProviderBinaryControl({
           setEditing(false);
         }}
         className={`grid size-6 place-items-center rounded hover:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent ${
-          restartRequired ? "text-amber-300" : "text-content/35 hover:text-content"
+          restartRequired
+            ? "text-amber-300"
+            : "text-content/35 hover:text-content"
         }`}
       >
         <FolderOpen className="size-3.5" strokeWidth={1.75} />
@@ -2931,7 +2941,8 @@ function ProviderBinaryControl({
                 className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-mono text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/35 focus:border-accent/45 disabled:opacity-50"
               />
               <p className="mt-1.5 text-[10px] text-content/40">
-                Enter the absolute path to the CLI executable. Changes apply after restarting MonoCode.
+                Enter the absolute path to the CLI executable. Changes apply
+                after restarting MonoCode.
               </p>
               {error ? (
                 <span
@@ -2970,31 +2981,33 @@ function ProviderBinaryControl({
               <div className="mt-2 rounded-md border border-content/10 bg-content/[0.03] px-2.5 py-2">
                 <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[10px] text-content/65">
                   {inspection?.path ??
-                    (error ? "CLI could not be resolved" : "Checking the selected CLI…")}
+                    (error
+                      ? "CLI could not be resolved"
+                      : "Checking the selected CLI…")}
                 </span>
                 <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[10px] text-content/40">
                   {inspection?.version ??
                     (error ? "Retry to check this CLI" : "Checking version…")}
                 </span>
               </div>
-               {error ? (
-                 <span
-                   role="alert"
-                   title={error}
-                   className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
-                 >
-                   {error}
-                 </span>
-               ) : null}
-               {revealError ? (
-                 <span
-                   role="alert"
-                   className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
-                 >
-                   Could not open the CLI location: {revealError}
-                 </span>
-               ) : null}
-               <div className="mt-3 flex justify-end gap-2">
+              {error ? (
+                <span
+                  role="alert"
+                  title={error}
+                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
+                >
+                  {error}
+                </span>
+              ) : null}
+              {revealError ? (
+                <span
+                  role="alert"
+                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
+                >
+                  Could not open the CLI location: {revealError}
+                </span>
+              ) : null}
+              <div className="mt-3 flex justify-end gap-2">
                 {error ? (
                   <SecondaryButton
                     disabled={working}
@@ -3016,7 +3029,9 @@ function ProviderBinaryControl({
                     if (inspection) {
                       void revealPath(inspection.path).catch((cause) => {
                         setRevealError(
-                          cause instanceof Error ? cause.message : String(cause),
+                          cause instanceof Error
+                            ? cause.message
+                            : String(cause),
                         );
                       });
                     }
@@ -3242,7 +3257,44 @@ type AccountEditor = {
   provider: ProviderAccountProvider;
   accountId?: string;
   label: string;
+  /** Existing CLI config dir; empty keeps the profile isolated. */
+  configDir: string;
+  initialConfigDir?: string;
 };
+
+const CONFIG_DIR_HINT: Record<ProviderAccountProvider, string> = {
+  claude: "~/.claude-work (CLAUDE_CONFIG_DIR), empty = isolated",
+  codex: "~/.codex-work (CODEX_HOME), empty = isolated",
+};
+
+function useProviderAccountConfigDirs(
+  accounts: ProviderAccount[],
+  refreshKey: unknown,
+): Record<string, string | null> {
+  const [dirs, setDirs] = useState<Record<string, string | null>>({});
+  const key = accounts.map(identityKey).join("|");
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(
+      accounts
+        .filter((account) => !account.isDefault)
+        .map(
+          async (account) =>
+            [
+              identityKey(account),
+              await readProviderAccountConfigDir(account.provider, account.id),
+            ] as const,
+        ),
+    ).then((entries) => {
+      if (!cancelled) setDirs(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, refreshKey]);
+  return dirs;
+}
 
 function ProviderAccountsSettings() {
   const [version, setVersion] = useState(0);
@@ -3257,15 +3309,18 @@ function ProviderAccountsSettings() {
 
   const startAdd = (provider: ProviderAccountProvider) => {
     setError(null);
-    setEditor({ provider, label: "" });
+    setEditor({ provider, label: "", configDir: "" });
   };
 
   const startRename = (account: ProviderAccount) => {
     setError(null);
+    const current = configDirs[identityKey(account)] ?? "";
     setEditor({
       provider: account.provider,
       accountId: account.id,
       label: account.label,
+      configDir: current,
+      initialConfigDir: current,
     });
   };
 
@@ -3278,14 +3333,34 @@ function ProviderAccountsSettings() {
     setWorking(key);
     setError(null);
     try {
+      const configDir = editor.configDir.trim() || null;
       if (editor.accountId) {
+        if ((editor.initialConfigDir ?? "") !== (configDir ?? "")) {
+          await setProviderAccountConfigDir(
+            editor.provider,
+            editor.accountId,
+            configDir,
+          );
+        }
         renameProviderAccount(editor.provider, editor.accountId, editor.label);
       } else {
         const account = newProviderAccount(editor.provider, editor.label);
-        await loginHarness(editor.provider, account.id);
+        if (configDir) {
+          await setProviderAccountConfigDir(
+            account.provider,
+            account.id,
+            configDir,
+          );
+        }
+        // A linked dir that is already signed in needs no browser login.
+        const identity = configDir
+          ? await readProviderAccountIdentity(account.provider, account.id)
+          : null;
+        if (!identity) await loginHarness(editor.provider, account.id);
         saveProviderAccount(account);
       }
       setEditor(null);
+      setVersion((value) => value + 1);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -3338,6 +3413,10 @@ function ProviderAccountsSettings() {
     version,
   );
   const usage = useProviderAccountUsage(version);
+  const configDirs = useProviderAccountConfigDirs(
+    PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts),
+    version,
+  );
 
   return (
     <Group
@@ -3398,6 +3477,11 @@ function ProviderAccountsSettings() {
                         current ? { ...current, label } : current,
                       )
                     }
+                    onConfigDir={(configDir) =>
+                      setEditor((current) =>
+                        current ? { ...current, configDir } : current,
+                      )
+                    }
                     onCancel={() => setEditor(null)}
                     onSubmit={submitEditor}
                   />
@@ -3423,10 +3507,15 @@ function ProviderAccountsSettings() {
                           className="shrink-0"
                         />
                         <span className="min-w-0 truncate text-content/30">
-                          {identitySubtitle(identity) ??
-                            (account.isDefault
-                              ? "Provider CLI profile"
-                              : "Isolated profile")}
+                          {[
+                            configDirs[identityKey(account)],
+                            identitySubtitle(identity) ??
+                              (account.isDefault
+                                ? "Provider CLI profile"
+                                : "Isolated profile"),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </span>
                       </div>
                     </div>
@@ -3476,6 +3565,11 @@ function ProviderAccountsSettings() {
                       current ? { ...current, label } : current,
                     )
                   }
+                  onConfigDir={(configDir) =>
+                    setEditor((current) =>
+                      current ? { ...current, configDir } : current,
+                    )
+                  }
                   onCancel={() => setEditor(null)}
                   onSubmit={submitEditor}
                 />
@@ -3500,24 +3594,31 @@ function ProviderAccountEditor({
   editor,
   working,
   onLabel,
+  onConfigDir,
   onCancel,
   onSubmit,
 }: {
   editor: AccountEditor;
   working: boolean;
   onLabel: (label: string) => void;
+  onConfigDir: (configDir: string) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const adding = !editor.accountId;
+  const linked = Boolean(editor.configDir.trim());
+  const browse = async () => {
+    const [picked] = await pickFolders("Choose config directory");
+    if (picked) onConfigDir(picked);
+  };
   return (
     <form
-      className="flex h-12 items-center border-b border-content/5 px-4 py-2 last:border-b-0"
+      className="flex flex-col gap-1.5 border-b border-content/5 px-4 py-2 last:border-b-0"
       onSubmit={onSubmit}
     >
       <div
         data-provider-account-editor-field
-        className="flex items-center pr-1 h-8 min-w-0 flex-1 overflow-hidden rounded-md border border-content/10 bg-content/[0.04] focus-within:border-accent/45"
+        className="flex h-8 w-full min-w-0 shrink-0 items-center overflow-hidden rounded-md border border-content/10 bg-content/[0.04] pr-1 focus-within:border-accent/45"
       >
         <label className="h-full min-w-0 flex-1">
           <span className="sr-only">Account name</span>
@@ -3549,9 +3650,38 @@ function ProviderAccountEditor({
           {working ? <Loader className="size-3 animate-spin" /> : null}
           {adding
             ? working
-              ? "Waiting for browser…"
-              : "Sign in and add"
+              ? linked
+                ? "Linking…"
+                : "Waiting for browser…"
+              : linked
+                ? "Add"
+                : "Sign in and add"
             : "Save"}
+        </button>
+      </div>
+      <div className="flex h-8 items-center gap-1 overflow-hidden rounded-md border border-content/10 bg-content/[0.04] pr-1 focus-within:border-accent/45">
+        <label className="h-full min-w-0 flex-1">
+          <span className="sr-only">Config directory</span>
+          <input
+            type="text"
+            value={editor.configDir}
+            disabled={working}
+            spellCheck={false}
+            placeholder={CONFIG_DIR_HINT[editor.provider]}
+            aria-label={`${HARNESS_TITLE[editor.provider]} config directory`}
+            onChange={(event) => onConfigDir(event.target.value)}
+            className="h-full w-full bg-transparent px-2.5 font-mono text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/25 disabled:opacity-50"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={working}
+          title="Choose folder"
+          aria-label="Choose config directory"
+          onClick={() => void browse()}
+          className="grid size-6 shrink-0 place-items-center rounded-[4.5px] text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
+        >
+          <FolderOpen className="size-3.5" strokeWidth={1.75} />
         </button>
       </div>
     </form>

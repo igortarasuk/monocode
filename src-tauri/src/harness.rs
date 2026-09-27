@@ -624,6 +624,131 @@ pub(crate) fn provider_account_path(
         .join(account_id))
 }
 
+/// Suffix for a profile's own directory while it points elsewhere.
+const LOCAL_PROFILE_SUFFIX: &str = ".local";
+
+fn local_profile_backup(dir: &Path) -> PathBuf {
+    let mut name = dir.file_name().unwrap_or_default().to_os_string();
+    name.push(LOCAL_PROFILE_SUFFIX);
+    dir.with_file_name(name)
+}
+
+fn expand_config_dir(raw: &str) -> Result<PathBuf, String> {
+    let raw = raw.trim();
+    let path = match raw.strip_prefix("~/").or((raw == "~").then_some("")) {
+        Some(rest) => PathBuf::from(dirs_home().ok_or("Home directory is unavailable")?).join(rest),
+        None => PathBuf::from(raw),
+    };
+    if !path.is_absolute() {
+        return Err("Config directory must be an absolute path or start with ~/".into());
+    }
+    let path = path.canonicalize().map_err(|error| {
+        format!(
+            "Config directory {} is unavailable: {error}",
+            path.display()
+        )
+    })?;
+    if !path.is_dir() {
+        return Err(format!("{} is not a directory", path.display()));
+    }
+    Ok(path)
+}
+
+/// The directory a profile links to, or `None` for an isolated profile.
+#[tauri::command(async)]
+pub fn provider_account_config_dir(
+    app: AppHandle,
+    provider: String,
+    account_id: String,
+) -> Result<Option<String>, String> {
+    let dir = provider_account_path(&app, &provider, &account_id)?;
+    match std::fs::symlink_metadata(&dir) {
+        Ok(meta) if meta.file_type().is_symlink() => std::fs::read_link(&dir)
+            .map(|target| Some(target.to_string_lossy().into_owned()))
+            .map_err(|error| error.to_string()),
+        _ => Ok(None),
+    }
+}
+
+/// Point a profile at an existing CLI config dir, or back to its own.
+/// The profile path becomes a symlink, so every reader follows it.
+#[tauri::command(async)]
+pub fn provider_account_set_config_dir(
+    app: AppHandle,
+    host: State<'_, HarnessHost>,
+    provider: String,
+    account_id: String,
+    config_dir: Option<String>,
+) -> Result<Option<String>, String> {
+    let dir = provider_account_path(&app, &provider, &account_id)?;
+    let target = match config_dir.as_deref().map(str::trim) {
+        Some(raw) if !raw.is_empty() => Some(expand_config_dir(raw)?),
+        _ => None,
+    };
+    if let Some(target) = &target {
+        let accounts_root = dir.parent().and_then(Path::parent).unwrap_or(&dir);
+        let accounts_root = accounts_root
+            .canonicalize()
+            .unwrap_or(accounts_root.to_path_buf());
+        if target.starts_with(&accounts_root) {
+            return Err("Choose a directory outside MonoCode's own profiles".into());
+        }
+    }
+    host.kill_account(&provider, &account_id);
+    relink_profile_dir(&dir, target.as_deref())?;
+    Ok(target.map(|target| target.to_string_lossy().into_owned()))
+}
+
+fn relink_profile_dir(dir: &Path, target: Option<&Path>) -> Result<(), String> {
+    let backup = local_profile_backup(dir);
+    let meta = std::fs::symlink_metadata(dir).ok();
+    let is_link = meta.as_ref().is_some_and(|m| m.file_type().is_symlink());
+    if is_link {
+        std::fs::remove_file(dir)
+            .map_err(|e| format!("Could not unlink {}: {e}", dir.display()))?;
+    } else if meta.is_some() && target.is_some() {
+        if backup.exists() {
+            return Err(format!(
+                "{} already exists; move it away first",
+                backup.display()
+            ));
+        }
+        std::fs::rename(dir, &backup)
+            .map_err(|e| format!("Could not set aside {}: {e}", dir.display()))?;
+    }
+    let Some(target) = target else {
+        if !dir.exists() {
+            if backup.is_dir() {
+                std::fs::rename(&backup, dir)
+                    .map_err(|e| format!("Could not restore {}: {e}", dir.display()))?;
+            } else {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+        }
+        return Ok(());
+    };
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    link_dir(target, dir)
+}
+
+#[cfg(unix)]
+fn link_dir(target: &Path, link: &Path) -> Result<(), String> {
+    std::os::unix::fs::symlink(target, link).map_err(|e| {
+        format!(
+            "Could not link {} to {}: {e}",
+            link.display(),
+            target.display()
+        )
+    })
+}
+
+#[cfg(not(unix))]
+fn link_dir(_target: &Path, _link: &Path) -> Result<(), String> {
+    Err("Custom config directories are supported on macOS and Linux only".into())
+}
+
 #[tauri::command(async)]
 pub fn provider_account_remove(
     app: AppHandle,
@@ -650,6 +775,11 @@ pub fn provider_account_remove(
         }
     };
     if metadata.file_type().is_symlink() || metadata.is_file() {
+        let backup = local_profile_backup(&dir);
+        if backup.is_dir() {
+            std::fs::remove_dir_all(&backup)
+                .map_err(|error| format!("Could not remove {}: {error}", backup.display()))?;
+        }
         std::fs::remove_file(&dir)
     } else {
         std::fs::remove_dir_all(&dir)
@@ -2418,6 +2548,14 @@ pub(crate) fn apply_gui_env(cmd: &mut Command) {
     apply_login_config_dirs(cmd);
 }
 
+/// The default profile's config dir as the CLI would resolve it.
+pub(crate) fn default_config_dir_env(key: &str) -> Option<PathBuf> {
+    std::env::var_os(key)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| login_shell_env(key).map(PathBuf::from))
+}
+
 /// Menu launches miss config dirs exported in the shell rc.
 /// Profiles still override these in `apply_provider_account`.
 fn apply_login_config_dirs(cmd: &mut Command) {
@@ -2578,6 +2716,56 @@ fn command_basename(command: &str) -> &str {
 mod tests {
     use super::*;
     use std::os::unix::process::CommandExt;
+
+    #[test]
+    fn relink_profile_sets_aside_and_restores_the_local_dir() {
+        let root = std::env::temp_dir().join(format!("mc-relink-{}", uuid::Uuid::new_v4()));
+        let dir = root.join("claude/account-a");
+        let target = root.join("claude-work");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(".credentials.json"), "local").unwrap();
+        std::fs::create_dir_all(target.join("hooks")).unwrap();
+
+        relink_profile_dir(&dir, Some(&target)).unwrap();
+        assert!(std::fs::symlink_metadata(&dir)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(dir.join("hooks").is_dir());
+        assert!(local_profile_backup(&dir)
+            .join(".credentials.json")
+            .is_file());
+
+        let other = root.join("claude-personal");
+        std::fs::create_dir_all(&other).unwrap();
+        relink_profile_dir(&dir, Some(&other)).unwrap();
+        assert_eq!(std::fs::read_link(&dir).unwrap(), other);
+        assert!(target.join("hooks").is_dir(), "old target must stay intact");
+
+        relink_profile_dir(&dir, None).unwrap();
+        assert!(!std::fs::symlink_metadata(&dir)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".credentials.json")).unwrap(),
+            "local"
+        );
+        assert!(!local_profile_backup(&dir).exists());
+        assert!(other.is_dir());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn expand_config_dir_rejects_relative_and_missing_paths() {
+        assert!(expand_config_dir("relative/dir").is_err());
+        assert!(expand_config_dir("/definitely/not/here/mc").is_err());
+        let tmp = std::env::temp_dir();
+        assert_eq!(
+            expand_config_dir(tmp.to_str().unwrap()).unwrap(),
+            tmp.canonicalize().unwrap()
+        );
+    }
 
     fn spawn_group(script: &str) -> std::process::Child {
         Command::new("sh")
