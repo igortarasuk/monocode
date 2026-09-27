@@ -53,3 +53,6 @@ lerna-debug.log*
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Manjaro container build output
+out-docker/

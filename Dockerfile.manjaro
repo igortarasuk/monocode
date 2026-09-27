@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile:1.7
+FROM manjarolinux/base:latest AS build
+RUN pacman -Syu --noconfirm --needed base-devel rust nodejs npm pkgconf git \
+      webkit2gtk-4.1 gtk3 libsoup3 librsvg libayatana-appindicator openssl \
+    && pacman -Scc --noconfirm
+WORKDIR /src
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY . .
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    npm run tauri build -- --no-bundle
+
+FROM scratch AS artifact
+COPY --from=build /src/target/release/monocode /monocode
