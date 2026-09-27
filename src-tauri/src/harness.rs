@@ -2415,6 +2415,20 @@ pub(crate) fn apply_gui_env(cmd: &mut Command) {
     if std::env::var_os("LANG").is_none() && std::env::var_os("LC_ALL").is_none() {
         cmd.env("LANG", "en_US.UTF-8");
     }
+    apply_login_config_dirs(cmd);
+}
+
+/// Menu launches miss config dirs exported in the shell rc.
+/// Profiles still override these in `apply_provider_account`.
+fn apply_login_config_dirs(cmd: &mut Command) {
+    for key in ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] {
+        if std::env::var_os(key).is_some() {
+            continue;
+        }
+        if let Some(value) = login_shell_env(key) {
+            cmd.env(key, value);
+        }
+    }
 }
 
 fn prepare_child(cmd: &mut Command, command: &str) {
@@ -2463,8 +2477,10 @@ static LOGIN_SHELL_ENV: Mutex<Option<HashMap<String, String>>> = Mutex::new(None
 
 /// Keys worth keeping out of `printenv`. PATH is the important one: a
 /// Finder-launched app inherits only launchd's bare PATH.
-const LOGIN_SHELL_KEYS: [&str; 6] = [
+const LOGIN_SHELL_KEYS: [&str; 8] = [
     "PATH",
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
     "AI_GATEWAY_API_KEY",
     "FX_AI_GATEWAY_API_KEY",
     "VERCEL_OIDC_TOKEN",

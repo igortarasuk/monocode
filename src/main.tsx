@@ -1,4 +1,6 @@
 import React, { useLayoutEffect } from "react";
+import { ResizeEdges } from "./app/shell/ResizeEdges";
+import { IS_LINUX } from "./platform/tauri/platform";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -85,6 +87,7 @@ void Promise.all([homeDirPrimed, providerBinaryPathsPrimed, loadBootWorkspace()]
             history={history}
             historyCwd={historyCwd}
           />
+          {IS_LINUX ? <ResizeEdges /> : null}
         </BootGate>
       </React.StrictMode>,
     );
