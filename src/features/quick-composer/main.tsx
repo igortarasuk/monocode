@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { IS_MAC } from "../../platform/tauri/platform";
+import { IS_LINUX, IS_MAC } from "../../platform/tauri/platform";
 import {
   applyAccentColor,
   applyThemeDarkLightness,
@@ -24,6 +24,7 @@ import "../../styles/index.css";
  */
 function applyAppearance() {
   document.documentElement.classList.toggle("is-mac", IS_MAC);
+  document.documentElement.classList.toggle("is-linux", IS_LINUX);
   applyAccentColor(loadAccentColor());
   applyThemeTint(loadThemeHue(), loadThemeSaturation());
   applyThemeDarkLightness(loadThemeDarkLightness());

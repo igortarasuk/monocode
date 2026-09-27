@@ -1,6 +1,10 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { isHexColor } from "../../../shared/lib/colorUtils";
-import { HAS_NATIVE_GLASS, IS_MAC } from "../../../platform/tauri/platform";
+import {
+  HAS_NATIVE_GLASS,
+  IS_LINUX,
+  IS_MAC,
+} from "../../../platform/tauri/platform";
 import { readFlag, writeFlag } from "./storageFlags";
 import { applyUiScale, loadUiScale } from "./uiScale";
 import {
@@ -298,6 +302,7 @@ export function applyThemeTint(hue: number, saturation: number) {
 
 export function initAppearance() {
   document.documentElement.classList.toggle("is-mac", IS_MAC);
+  document.documentElement.classList.toggle("is-linux", IS_LINUX);
   document.documentElement.classList.toggle(
     "has-native-glass",
     HAS_NATIVE_GLASS,

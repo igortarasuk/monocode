@@ -142,6 +142,13 @@ html:not(.is-mac) #root {
   text-rendering: optimizeLegibility;
 }
 
+/* Mac-first mono stack lands on thin Liberation Mono here. */
+html.is-linux {
+  --font-mono:
+    "JetBrains Mono", Hack, "Noto Sans Mono", "DejaVu Sans Mono",
+    "Liberation Mono", monospace;
+}
+
 /* Nerd Font glyphs for Powerlevel10k and friends. */
 html:not(.is-mac) {
   --font-terminal:
