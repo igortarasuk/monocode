@@ -115,7 +115,7 @@ function terminalTheme(light: boolean) {
 
 function monoFont(): string {
   const fromCss = getComputedStyle(document.documentElement)
-    .getPropertyValue("--font-mono")
+    .getPropertyValue("--font-terminal")
     .trim();
   return fromCss || "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
 }

@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tauri::window::Color;
 #[cfg(target_os = "windows")]
 use tauri::window::{Effect, EffectsBuilder};
@@ -148,7 +147,13 @@ pub fn set_window_glass_enabled(window: WebviewWindow, enabled: bool) {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let _ = (window, enabled);
+        // Alpha only; blur behind is up to the compositor (KWin).
+        let color = if enabled {
+            Color(0, 0, 0, 0)
+        } else {
+            Color(23, 23, 26, 255)
+        };
+        let _ = window.set_background_color(Some(color));
     }
 }
 

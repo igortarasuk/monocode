@@ -66,6 +66,7 @@
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
+  --font-terminal: var(--font-mono);
   --font-sans:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
     Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
@@ -139,6 +140,13 @@ html:not(.is-mac) #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+/* Nerd Font glyphs for Powerlevel10k and friends. */
+html:not(.is-mac) {
+  --font-terminal:
+    "MesloLGS NF", "Hack Nerd Font Mono", "JetBrainsMono Nerd Font Mono",
+    "Symbols Nerd Font Mono", var(--font-mono);
 }
 
 html:not(.is-mac) ::-webkit-scrollbar {

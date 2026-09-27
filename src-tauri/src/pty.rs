@@ -484,6 +484,7 @@ fn default_shell() -> (String, Vec<String>) {
         let shell = std::env::var("SHELL")
             .ok()
             .filter(|shell| !shell.is_empty())
+            .or_else(passwd_shell)
             .unwrap_or_else(|| {
                 if cfg!(target_os = "macos") {
                     "/bin/zsh".into()
@@ -497,6 +498,18 @@ fn default_shell() -> (String, Vec<String>) {
             .collect();
         (shell, args)
     }
+}
+
+/// The login shell from passwd, for launches without `SHELL`.
+#[cfg(not(windows))]
+fn passwd_shell() -> Option<String> {
+    let entry = unsafe { libc::getpwuid(libc::getuid()) };
+    if entry.is_null() {
+        return None;
+    }
+    let shell = unsafe { std::ffi::CStr::from_ptr((*entry).pw_shell) };
+    let shell = shell.to_str().ok()?.trim();
+    (!shell.is_empty()).then(|| shell.to_string())
 }
 
 #[cfg(not(windows))]
