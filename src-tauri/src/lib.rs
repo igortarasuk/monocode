@@ -317,6 +317,7 @@ pub fn run() {
             fs::git_range_context,
             fs::git_pr_status,
             fs::git_pr_create,
+            fs::git_review_provider,
             fs::git_github_status,
             fs::github_monocode_star_status,
             fs::github_star_monocode,

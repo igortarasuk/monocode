@@ -46,6 +46,8 @@ import {
   gitHeadMessage,
   gitPrCreate,
   gitPrStatus,
+  gitRangeContext,
+  gitReviewProvider,
   gitPull,
   gitPush,
   gitStageAll,
@@ -60,9 +62,11 @@ import {
   type GitFileDiffKind,
   type GitHistoryCommit,
   type GitPr,
+  type ReviewProvider,
 } from "../../../platform/tauri/fs";
 import type { HarnessId } from "../../sessions/model/session";
 import { recordInboxSelfActivity } from "../../inbox/model/inboxSelfActivity";
+import { findLinearIds, withLinearRefs } from "../model/linearRef";
 import {
   loadChangesView,
   saveChangesView,
@@ -361,6 +365,8 @@ function ChangedFiles({
   const [changesExpanded, setChangesExpanded] = useState(changesOpen);
   const [view, setView] = useState<ChangesView>(changesView);
   const { pr, reload: reloadPr } = usePrStatus(cwd, index?.branch);
+  const provider = useReviewProvider(cwd, index?.remote);
+  const prWord = provider === "gitlab" ? "MR" : "PR";
   const staged = useMemo(() => files.filter((file) => file.staged), [files]);
   const unstaged = useMemo(
     () => files.filter((file) => file.unstaged),
@@ -435,7 +441,7 @@ function ChangedFiles({
   const recordPrActivity = (number = pr?.number) => {
     if (!number) return;
     recordInboxSelfActivity({
-      provider: "github",
+      provider,
       kind: "pr",
       number,
       projectPath: cwd,
@@ -447,7 +453,7 @@ function ChangedFiles({
     const branch = index.branch;
     return confirmNative(
       kind === "pr"
-        ? `Create a pull request from default branch "${branch}"?`
+        ? `Create a ${reviewNoun(provider)} from default branch "${branch}"?`
         : `Push to default branch "${branch}"?`,
     );
   };
@@ -602,15 +608,25 @@ function ChangedFiles({
 
   const openCreatedPr = async () => {
     const content = await generatePrContent(cwd, textHarness);
-    if (!content) throw new Error("Could not prepare pull request content");
+    if (!content) {
+      throw new Error(`Could not prepare ${reviewNoun(provider)} content`);
+    }
+    const range = await gitRangeContext(cwd).catch(() => null);
+    const ids = findLinearIds({
+      commitSummary: range?.commitSummary ?? "",
+      branch: content.head,
+    });
+    const linked = withLinearRefs(content, ids);
     const url = await gitPrCreate(
       cwd,
-      content.title,
-      content.body,
+      linked.title,
+      linked.body,
       content.base,
       content.head,
     );
-    const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);
+    const number = Number(
+      /\/(?:pull|merge_requests)\/(\d+)(?:[/?#]|$)/.exec(url)?.[1],
+    );
     if (Number.isInteger(number) && number > 0) recordPrActivity(number);
     await openUrl(url.trim());
   };
@@ -728,7 +744,7 @@ function ChangedFiles({
                 onClick={() => void commit(true, true)}
                 className="flex h-7 w-full items-center px-3 text-left text-[12px] text-content hover:bg-content/10 disabled:opacity-40"
               >
-                Commit, Push & Create PR
+                Commit, Push & Create {prWord}
               </button>
               <div className="my-1 border-t border-content/10" />
               <button
@@ -752,6 +768,7 @@ function ChangedFiles({
           <GitSyncActions
             index={index}
             pr={pr}
+            provider={provider}
             busy={busy}
             hasRemote={hasRemote}
             hasOpenPr={hasOpenPr}
@@ -905,6 +922,35 @@ function usePrStatus(
   return { pr, reload };
 }
 
+const providerByCwd = new Map<string, ReviewProvider>();
+
+function reviewNoun(provider: ReviewProvider): string {
+  return provider === "gitlab" ? "merge request" : "pull request";
+}
+
+function useReviewProvider(
+  cwd: string,
+  remote: string | null | undefined,
+): ReviewProvider {
+  const [provider, setProvider] = useState<ReviewProvider>(
+    () => providerByCwd.get(cwd) ?? "github",
+  );
+  useEffect(() => {
+    if (!cwd || cwd === "~" || !remote) return;
+    let cancelled = false;
+    void gitReviewProvider(cwd)
+      .then((next) => {
+        providerByCwd.set(cwd, next);
+        if (!cancelled) setProvider(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, remote]);
+  return provider;
+}
+
 function cachedPr(
   cwd: string,
   branch: string | null | undefined,
@@ -931,6 +977,7 @@ function syncStatusLabel(index: GitDiffIndex): string {
 function GitSyncActions({
   index,
   pr,
+  provider,
   busy,
   hasRemote,
   hasOpenPr,
@@ -945,6 +992,7 @@ function GitSyncActions({
 }: {
   index: GitDiffIndex;
   pr: GitPr | null;
+  provider: ReviewProvider;
   busy: string | null;
   hasRemote: boolean;
   hasOpenPr: boolean;
@@ -974,12 +1022,15 @@ function GitSyncActions({
         : behind > 0
           ? `Pull ${behind} commit${behind === 1 ? "" : "s"} from ${dest}`
           : `Push ${ahead} commit${ahead === 1 ? "" : "s"} to ${dest}`;
+  const noun = reviewNoun(provider);
+  const word = provider === "gitlab" ? "MR" : "PR";
+  const mark = provider === "gitlab" ? "!" : "#";
   const createTitle = index.defaultBranch
-    ? `Create a pull request into ${index.defaultBranch}`
-    : "Create pull request";
+    ? `Create a ${noun} into ${index.defaultBranch}`
+    : `Create ${noun}`;
   const viewTitle = pr?.title
-    ? `View PR #${pr.number}: ${pr.title}`
-    : "View pull request";
+    ? `View ${word} ${mark}${pr.number}: ${pr.title}`
+    : `View ${noun}`;
   const btn =
     "flex h-7 w-full min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-[12px] font-medium disabled:opacity-40";
   const secondary = `${btn} bg-content/10 text-content hover:bg-content/15`;
@@ -1048,7 +1099,7 @@ function GitSyncActions({
           ) : (
             <GitPullRequest className="size-3.5 shrink-0" strokeWidth={1.75} />
           )}
-          Create PR
+          Create {word}
         </button>
       ) : null}
       {showViewPr ? (
@@ -1061,7 +1112,7 @@ function GitSyncActions({
         >
           <ExternalLink className="size-3.5 shrink-0" strokeWidth={1.75} />
           <span className="min-w-0 truncate">
-            {pr?.number ? `View PR #${pr.number}` : "View PR"}
+            {pr?.number ? `View ${word} ${mark}${pr.number}` : `View ${word}`}
           </span>
         </button>
       ) : null}

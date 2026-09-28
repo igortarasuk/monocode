@@ -323,7 +323,14 @@ export type GitPr = {
   title: string;
   url: string;
   state: string;
+  provider: ReviewProvider;
 };
+
+export type ReviewProvider = "github" | "gitlab";
+
+export function gitReviewProvider(cwd: string): Promise<ReviewProvider> {
+  return invoke<ReviewProvider>("git_review_provider", { cwd });
+}
 
 export function gitPrStatus(cwd: string): Promise<GitPr | null> {
   return invoke<GitPr | null>("git_pr_status", { cwd });

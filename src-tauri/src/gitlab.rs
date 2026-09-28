@@ -1104,6 +1104,340 @@ fn write_secret_file(path: &Path, value: &str) -> Result<(), String> {
     }
 }
 
+const GLAB_AUTH_TTL: Duration = Duration::from_secs(300);
+
+/// API host and project path of a working copy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReviewRemote {
+    host: String,
+    project: String,
+}
+
+/// GitLab remote of this working copy; None for GitHub.
+pub(crate) fn gitlab_review_remote(app: &AppHandle, root: &Path) -> Option<ReviewRemote> {
+    let mut remote = review_remote_for(root)?;
+    if remote.host == "github.com" {
+        return None;
+    }
+    let settings_host = read_config(app)
+        .ok()
+        .flatten()
+        .and_then(|config| configured_remote(&config.url))
+        .map(|configured| host_without_port(&configured.authority));
+    let glab_host = read_glab_config().and_then(|config| glab_host_for_ssh(&config, &remote.host));
+    let api_host = glab_host.or_else(|| {
+        settings_host
+            .clone()
+            .filter(|host| same_site(host, &remote.host))
+    });
+    if let Some(host) = api_host {
+        remote.host = host;
+        return Some(remote);
+    }
+    if remote.host.contains("gitlab") || glab_authenticated(&remote.host) {
+        Some(remote)
+    } else {
+        None
+    }
+}
+
+/// Host whose glab `ssh_host` is the remote's SSH host.
+fn glab_host_for_ssh(config: &str, ssh_host: &str) -> Option<String> {
+    let mut in_hosts = false;
+    let mut current: Option<String> = None;
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if indent == 0 {
+            in_hosts = trimmed == "hosts:";
+            current = None;
+            continue;
+        }
+        if !in_hosts {
+            continue;
+        }
+        if indent == 4 && trimmed.ends_with(':') {
+            current = Some(trimmed.trim_end_matches(':').trim().to_ascii_lowercase());
+        } else if let Some(value) = trimmed.strip_prefix("ssh_host:") {
+            let value = value.trim().trim_matches(['"', '\'']);
+            if value.eq_ignore_ascii_case(ssh_host) && current.is_some() {
+                return current;
+            }
+        }
+    }
+    None
+}
+
+fn read_glab_config() -> Option<String> {
+    let dir = std::env::var_os("GLAB_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("XDG_CONFIG_HOME").map(|base| PathBuf::from(base).join("glab-cli"))
+        })
+        .or_else(|| crate::dirs_home().map(|home| PathBuf::from(home).join(".config/glab-cli")))?;
+    fs::read_to_string(dir.join("config.yml")).ok()
+}
+
+/// Same parent domain, as in git.corp.one and gitlab.corp.one.
+fn same_site(a: &str, b: &str) -> bool {
+    fn parent(host: &str) -> Option<&str> {
+        let (_, rest) = host.split_once('.')?;
+        rest.contains('.').then_some(rest)
+    }
+    a == b || parent(a).is_some_and(|site| parent(b) == Some(site))
+}
+
+/// Latest merge request from `branch`, via glab or API.
+pub(crate) fn gitlab_mr_status_for(
+    app: &AppHandle,
+    root: &Path,
+    remote: &ReviewRemote,
+    branch: &str,
+) -> Result<Option<crate::fs::GitPr>, String> {
+    let value = if glab_authenticated(&remote.host) {
+        let json = glab_run(
+            root,
+            &[
+                "mr",
+                "list",
+                "--repo",
+                &remote.glab_repo(),
+                "--source-branch",
+                branch,
+                "--all",
+                "--per-page",
+                "20",
+                "--output",
+                "json",
+            ],
+        )?;
+        serde_json::from_str(&json).map_err(|_| "glab returned invalid JSON".to_string())?
+    } else {
+        let config = api_config_for(app, remote)?;
+        let path = format!(
+            "/projects/{}/merge_requests?source_branch={}&state=all&order_by=updated_at&per_page=20",
+            encode_path_component(&remote.project),
+            encode_path_component(branch),
+        );
+        gitlab_get(&config, &path)?.value
+    };
+    Ok(parse_mr_list(&value))
+}
+
+/// Create a merge request and return its URL.
+pub(crate) fn gitlab_mr_create_for(
+    app: &AppHandle,
+    root: &Path,
+    remote: &ReviewRemote,
+    fields: &MrCreateFields,
+) -> Result<String, String> {
+    let title = fields.title.trim();
+    if title.is_empty() {
+        return Err("Merge request title cannot be empty".into());
+    }
+    if glab_authenticated(&remote.host) {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let body_path = std::env::temp_dir().join(format!("monocode-mr-{stamp}.md"));
+        fs::write(&body_path, fields.body.trim()).map_err(|e| e.to_string())?;
+        let result = glab_run(
+            root,
+            &[
+                "mr",
+                "create",
+                "--repo",
+                &remote.glab_repo(),
+                "--source-branch",
+                fields.head.trim(),
+                "--target-branch",
+                fields.base.trim(),
+                "--title",
+                title,
+                "--description-file",
+                &body_path.to_string_lossy(),
+                "--yes",
+            ],
+        );
+        let _ = fs::remove_file(&body_path);
+        return result.and_then(|output| mr_url_from_output(&output));
+    }
+    let config = api_config_for(app, remote)?;
+    let path = format!(
+        "/projects/{}/merge_requests",
+        encode_path_component(&remote.project)
+    );
+    let response = gitlab_post_form(
+        &config,
+        &path,
+        &[
+            ("source_branch", fields.head.trim()),
+            ("target_branch", fields.base.trim()),
+            ("title", title),
+            ("description", fields.body.trim()),
+        ],
+    )?;
+    string_field(&response.value, "web_url")
+        .ok_or_else(|| "GitLab did not return a merge request URL".into())
+}
+
+pub(crate) struct MrCreateFields<'a> {
+    pub title: &'a str,
+    pub body: &'a str,
+    pub base: &'a str,
+    pub head: &'a str,
+}
+
+impl ReviewRemote {
+    fn glab_repo(&self) -> String {
+        format!("https://{}/{}", self.host, self.project)
+    }
+}
+
+fn review_remote_for(root: &Path) -> Option<ReviewRemote> {
+    let url = git_remote_url(root, "origin").or_else(|| {
+        let mut cmd = Command::new("git");
+        crate::hide_window_console(&mut cmd);
+        let output = cmd.arg("remote").current_dir(root).output().ok()?;
+        let first = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()?
+            .trim()
+            .to_string();
+        git_remote_url(root, &first)
+    })?;
+    review_remote_from_url(&url)
+}
+
+fn git_remote_url(root: &Path, name: &str) -> Option<String> {
+    let mut cmd = Command::new("git");
+    crate::hide_window_console(&mut cmd);
+    let output = cmd
+        .args(["remote", "get-url", name])
+        .current_dir(root)
+        .output()
+        .ok()?;
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !url.is_empty()).then_some(url)
+}
+
+fn review_remote_from_url(url: &str) -> Option<ReviewRemote> {
+    let (authority, path) = remote_authority_path(url)?;
+    let path = path.trim_matches('/');
+    let project = path.strip_suffix(".git").unwrap_or(path).to_string();
+    valid_project_path(&project).then(|| ReviewRemote {
+        host: host_without_port(&authority),
+        project,
+    })
+}
+
+fn api_config_for(app: &AppHandle, remote: &ReviewRemote) -> Result<GitlabConfig, String> {
+    let missing = || {
+        format!(
+            "Connect GitLab for {} in Settings or run `glab auth login --hostname {}`",
+            remote.host, remote.host
+        )
+    };
+    let config = read_config(app)?.ok_or_else(missing)?;
+    let matches = configured_remote(&config.url)
+        .is_some_and(|configured| host_without_port(&configured.authority) == remote.host);
+    if matches {
+        Ok(config)
+    } else {
+        Err(missing())
+    }
+}
+
+fn parse_mr_list(value: &Value) -> Option<crate::fs::GitPr> {
+    let mut best = None;
+    for row in value.as_array()? {
+        let Some(number) = row.get("iid").and_then(Value::as_i64) else {
+            continue;
+        };
+        let pr = crate::fs::GitPr {
+            number,
+            title: string_field(row, "title").unwrap_or_default(),
+            url: string_field(row, "web_url").unwrap_or_default(),
+            state: normalize_state(&string_field(row, "state").unwrap_or_default()),
+            provider: "gitlab".into(),
+        };
+        if pr.state == "open" {
+            return Some(pr);
+        }
+        best.get_or_insert(pr);
+    }
+    best
+}
+
+fn mr_url_from_output(output: &str) -> Result<String, String> {
+    output
+        .split_whitespace()
+        .rev()
+        .find(|word| {
+            (word.starts_with("https://") || word.starts_with("http://"))
+                && word.contains("/merge_requests/")
+        })
+        .map(str::to_string)
+        .ok_or_else(|| {
+            if output.trim().is_empty() {
+                "glab returned no merge request URL".into()
+            } else {
+                output.trim().to_string()
+            }
+        })
+}
+
+fn glab_authenticated(host: &str) -> bool {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Instant;
+    static CACHE: OnceLock<Mutex<HashMap<String, (bool, Instant)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some((ok, at)) = cache.lock().ok().and_then(|map| map.get(host).copied()) {
+        if at.elapsed() < GLAB_AUTH_TTL {
+            return ok;
+        }
+    }
+    let ok = glab_run(Path::new("."), &["auth", "status", "--hostname", host]).is_ok();
+    if let Ok(mut map) = cache.lock() {
+        map.insert(host.to_string(), (ok, Instant::now()));
+    }
+    ok
+}
+
+fn glab_run(root: &Path, args: &[&str]) -> Result<String, String> {
+    let program = crate::harness::resolve_gui_binary("glab")
+        .ok_or_else(|| "GitLab CLI (`glab`) is not installed.".to_string())?;
+    let mut cmd = Command::new(program);
+    cmd.current_dir(root)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("NO_PROMPT", "1")
+        .env("GLAB_NO_PROMPT", "1")
+        .env("PAGER", "cat")
+        .env("GLAB_PAGER", "cat")
+        .env("NO_COLOR", "1");
+    crate::harness::apply_gui_env(&mut cmd);
+    crate::hide_window_console(&mut cmd);
+    let output = cmd.output().map_err(|error| error.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if output.status.success() {
+        return Ok(stdout);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        format!("glab {} failed", args.join(" "))
+    })
+}
+
 fn expand_home(input: &str) -> PathBuf {
     if input == "~" {
         return crate::dirs_home()
@@ -1123,6 +1457,62 @@ fn expand_home(input: &str) -> PathBuf {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn review_remote_parses_ssh_and_https() {
+        let ssh = review_remote_from_url("git@gitlab.example.com:ops/infra/wg.git").unwrap();
+        assert_eq!(ssh.host, "gitlab.example.com");
+        assert_eq!(ssh.project, "ops/infra/wg");
+        assert_eq!(ssh.glab_repo(), "https://gitlab.example.com/ops/infra/wg");
+        let https = review_remote_from_url("https://user@git.corp:8443/team/app.git/").unwrap();
+        assert_eq!(https.host, "git.corp");
+        assert_eq!(https.project, "team/app");
+        assert!(review_remote_from_url("git@gitlab.example.com:solo").is_none());
+    }
+
+    #[test]
+    fn maps_ssh_host_to_glab_api_host() {
+        let config = "git_protocol: ssh\nhosts:\n    gitlab.com:\n        api_host: gitlab.com\n        ssh_host:\n    gitlab.corp.one:\n        api_host: gitlab.corp.one\n        ssh_host: git.corp.one\n";
+        assert_eq!(
+            glab_host_for_ssh(config, "git.corp.one").as_deref(),
+            Some("gitlab.corp.one")
+        );
+        assert_eq!(glab_host_for_ssh(config, "other.host"), None);
+    }
+
+    #[test]
+    fn same_site_compares_parent_domains() {
+        assert!(same_site("gitlab.corp.one", "git.corp.one"));
+        assert!(same_site("gitlab.com", "gitlab.com"));
+        assert!(!same_site("gitlab.com", "github.com"));
+        assert!(!same_site("gitlab.corp.one", "git.other.one"));
+    }
+
+    #[test]
+    fn mr_list_prefers_open_then_latest() {
+        let rows = json!([
+            {"iid": 3, "title": "Old", "web_url": "https://g/x/-/merge_requests/3", "state": "merged"},
+            {"iid": 5, "title": "New", "web_url": "https://g/x/-/merge_requests/5", "state": "opened"}
+        ]);
+        let pr = parse_mr_list(&rows).unwrap();
+        assert_eq!(
+            (pr.number, pr.state.as_str(), pr.provider.as_str()),
+            (5, "open", "gitlab")
+        );
+        let closed = parse_mr_list(&json!([{"iid": 3, "state": "closed"}])).unwrap();
+        assert_eq!(closed.state, "closed");
+        assert!(parse_mr_list(&json!([])).is_none());
+    }
+
+    #[test]
+    fn mr_url_found_in_glab_output() {
+        let out = "Creating merge request for x into main\n!12 Title (x)\n https://gitlab.example.com/a/b/-/merge_requests/12\n";
+        assert_eq!(
+            mr_url_from_output(out).unwrap(),
+            "https://gitlab.example.com/a/b/-/merge_requests/12"
+        );
+        assert!(mr_url_from_output("").is_err());
+    }
 
     #[test]
     fn normalizes_host_and_api_suffix() {

@@ -23,6 +23,8 @@ vi.mock("../../../platform/tauri/fs", () => ({
   gitUnstageFile: vi.fn(async () => {}),
   gitDiscardFile: vi.fn(async () => {}),
   gitPrCreate: vi.fn(async () => ""),
+  gitRangeContext: vi.fn(async () => ({ commitSummary: "" })),
+  gitReviewProvider: vi.fn(async () => "github"),
   notifyGitChanged: vi.fn(),
   subscribeGitChanged: () => () => {},
   basename: (path: string) => path.split("/").pop() ?? path,
@@ -31,6 +33,10 @@ vi.mock("../../../platform/tauri/fs", () => ({
 vi.mock("../../../integrations/harness", () => ({
   generateCommitMessage: vi.fn(async () => ""),
   generatePrContent: vi.fn(async () => null),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn(async () => {}),
 }));
 
 vi.mock("../../files/model/fileWatch", () => ({
@@ -43,7 +49,14 @@ vi.mock("../../inbox/model/inboxSelfActivity", () => ({
 }));
 
 import { GitChangesPanel } from "./GitChangesPanel";
-import { gitDiffIndex, gitPull } from "../../../platform/tauri/fs";
+import {
+  gitDiffIndex,
+  gitPrCreate,
+  gitPull,
+  gitRangeContext,
+  gitReviewProvider,
+} from "../../../platform/tauri/fs";
+import { generatePrContent } from "../../../integrations/harness";
 import type { GitDiffIndex } from "../../../platform/tauri/fs";
 
 function index(overrides: Partial<GitDiffIndex> = {}): GitDiffIndex {
@@ -158,5 +171,50 @@ describe("GitChangesPanel pull action", () => {
 
     expect(gitPull).toHaveBeenCalledWith("/repo");
     expect(invalidateWatchedFiles).toHaveBeenCalled();
+  });
+});
+
+describe("GitChangesPanel GitLab merge request", () => {
+  it("creates an MR with the Linear id from commits", async () => {
+    vi.mocked(gitReviewProvider).mockResolvedValue("gitlab");
+    vi.mocked(gitRangeContext).mockResolvedValue({
+      base: "main",
+      head: "feature/pull",
+      commitSummary: "[OPS-7] add probe",
+      diffSummary: "",
+      diffPatch: "",
+    });
+    vi.mocked(generatePrContent).mockResolvedValue({
+      title: "Add probe",
+      body: "## Summary\n- probe",
+      base: "main",
+      head: "feature/pull",
+    });
+    vi.mocked(gitPrCreate).mockResolvedValue(
+      "https://gitlab.example.com/a/b/-/merge_requests/9",
+    );
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        remote: "origin",
+        upstream: "origin/feature/pull",
+        aheadOfDefault: 1,
+      }),
+    );
+    await renderPanel();
+
+    const create = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Create MR",
+    )!;
+    expect(create.disabled).toBe(false);
+    await act(async () => create.click());
+    await act(async () => {});
+
+    expect(gitPrCreate).toHaveBeenCalledWith(
+      "/repo",
+      "[OPS-7] Add probe",
+      "## Summary\n- probe\n\nRefs OPS-7",
+      "main",
+      "feature/pull",
+    );
   });
 });

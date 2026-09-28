@@ -1125,14 +1125,42 @@ pub struct GitPr {
     pub title: String,
     pub url: String,
     pub state: String,
+    pub provider: String,
 }
 
-/// Latest pull request for the current branch, if `gh` can see one.
+/// Latest PR or MR for the current branch.
 #[tauri::command]
-pub async fn git_pr_status(cwd: String) -> Result<Option<GitPr>, String> {
-    tauri::async_runtime::spawn_blocking(move || Ok(git_pr_status_for(&expand_home(&cwd))))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn git_pr_status(app: AppHandle, cwd: String) -> Result<Option<GitPr>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = expand_home(&cwd);
+        match crate::gitlab::gitlab_review_remote(&app, &root) {
+            Some(remote) => {
+                let Some(branch) = git_branch(&root) else {
+                    return Ok(None);
+                };
+                Ok(
+                    crate::gitlab::gitlab_mr_status_for(&app, &root, &remote, &branch)
+                        .ok()
+                        .flatten(),
+                )
+            }
+            None => Ok(git_pr_status_for(&root)),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Review provider of the working copy: github or gitlab.
+#[tauri::command]
+pub async fn git_review_provider(app: AppHandle, cwd: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = expand_home(&cwd);
+        let gitlab = crate::gitlab::gitlab_review_remote(&app, &root).is_some();
+        Ok(if gitlab { "gitlab" } else { "github" }.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(Deserialize)]
@@ -1143,9 +1171,10 @@ struct GitPrCreateInput {
     head: String,
 }
 
-/// Create a GitHub pull request with `gh` and return its URL.
+/// Create a PR with `gh`, or a GitLab MR; return its URL.
 #[tauri::command]
 pub async fn git_pr_create(
+    app: AppHandle,
     cwd: String,
     title: String,
     body: String,
@@ -1153,8 +1182,18 @@ pub async fn git_pr_create(
     head: String,
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let root = expand_home(&cwd);
+        if let Some(remote) = crate::gitlab::gitlab_review_remote(&app, &root) {
+            let fields = crate::gitlab::MrCreateFields {
+                title: &title,
+                body: &body,
+                base: &base,
+                head: &head,
+            };
+            return crate::gitlab::gitlab_mr_create_for(&app, &root, &remote, &fields);
+        }
         git_pr_create_for(
-            &expand_home(&cwd),
+            &root,
             &GitPrCreateInput {
                 title,
                 body,
@@ -4019,6 +4058,7 @@ fn parse_gh_pr_list(json: &str) -> Option<GitPr> {
             title: row.title,
             url: row.url,
             state: row.state.to_lowercase(),
+            provider: "github".into(),
         };
         if pr.state == "open" {
             return Some(pr);

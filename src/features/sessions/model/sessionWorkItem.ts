@@ -82,7 +82,7 @@ export async function resolveLinkedWorkItem(
   if (!referencesCurrentPr(message)) return null;
   try {
     const pr = await gitPrStatus(cwd);
-    if (!pr || !validNumber(pr.number)) return null;
+    if (!pr || pr.provider === "gitlab" || !validNumber(pr.number)) return null;
     const repo = repoFromGithubUrl(pr.url) ?? (await githubRepo(cwd));
     if (!validRepo(repo)) return null;
     return {
