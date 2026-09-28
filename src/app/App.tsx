@@ -536,6 +536,7 @@ import type { InboxSessionPortal } from "../features/inbox/ui/InboxDiscussionPan
 import { inboxAskKey, inboxAskPrompt } from "../features/inbox/model/inboxAsk";
 import { NotesView } from "../features/notes/ui";
 import { AutomationsView } from "../features/automations/ui/AutomationsView";
+import { CalendarView } from "../features/planning/ui/CalendarView";
 import {
   githubWorkItemThread,
   inboxComposerCard,
@@ -942,6 +943,7 @@ export default function App({
   const openingInboxSessions = useRef(new Map<string, Promise<string>>());
   const [notesViewOpen, setNotesViewOpen] = useState(false);
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
+  const [calendarViewOpen, setCalendarViewOpen] = useState(false);
   const [inspectedWorkerId, setInspectedWorkerId] = useState<string | null>(
     null,
   );
@@ -1066,6 +1068,8 @@ export default function App({
   notesViewOpenRef.current = notesViewOpen;
   const automationsViewOpenRef = useRef(automationsViewOpen);
   automationsViewOpenRef.current = automationsViewOpen;
+  const calendarViewOpenRef = useRef(calendarViewOpen);
+  calendarViewOpenRef.current = calendarViewOpen;
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   const sessionNavigationIdsRef = useRef<readonly string[]>([]);
@@ -1615,6 +1619,7 @@ export default function App({
             !inboxViewOpenRef.current &&
             !notesViewOpenRef.current &&
             !automationsViewOpenRef.current &&
+            !calendarViewOpenRef.current &&
             !settingsOpenRef.current
           ) {
             setComposerFocused(true);
@@ -2142,6 +2147,7 @@ export default function App({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
     const cwd = active?.cwd ?? sessionDefaults?.cwd ?? projectCwd;
     const session = newDefaultSession(cwd, sessionDefaults?.runtimeMode);
     const tab = newTab(session.id);
@@ -2164,6 +2170,7 @@ export default function App({
         setInboxViewOpen(false);
         setNotesViewOpen(false);
         setAutomationsViewOpen(false);
+        setCalendarViewOpen(false);
         const cwd =
           item.projectPath || active?.cwd || sessionDefaults?.cwd || projectCwd;
         setSidebarTab("sessions", cwd);
@@ -2203,6 +2210,7 @@ export default function App({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
       const cwd =
         (card.sourceCwd && looksLikeProject(card.sourceCwd)
           ? card.sourceCwd
@@ -3922,6 +3930,7 @@ export default function App({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
       setSettingsOpen(false);
       setFilePickerOpen(false);
       setSidebarTab("sessions", session.cwd);
@@ -4518,6 +4527,7 @@ export default function App({
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
+            calendarViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
             whatsNewVersionRef.current,
@@ -5020,6 +5030,7 @@ export default function App({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
 
       // At most one folder can take the blank session, and it keeps the
       // retargeting rules `onCwdChange` already owns.
@@ -6934,6 +6945,7 @@ export default function App({
           setInboxViewOpen(false);
           setNotesViewOpen(false);
           setAutomationsViewOpen(false);
+          setCalendarViewOpen(false);
           setSidebarTab("sessions", session.cwd);
         }
 
@@ -7025,6 +7037,7 @@ export default function App({
           setInboxViewOpen(false);
           setNotesViewOpen(false);
           setAutomationsViewOpen(false);
+          setCalendarViewOpen(false);
           setSidebarTab("sessions", cwd);
         },
         submit: submitSession,
@@ -9202,6 +9215,7 @@ export default function App({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
       onOpenApprovalSession(sessionId);
     },
     [onOpenApprovalSession],
@@ -9336,6 +9350,7 @@ export default function App({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
     setFilePickerInitialQuery("");
     setFilePickerResetToken((token) => token + 1);
     setFilePickerOpen(true);
@@ -9345,6 +9360,7 @@ export default function App({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
     setFilePickerInitialQuery(">");
     setFilePickerResetToken((token) => token + 1);
     setFilePickerOpen(true);
@@ -9361,6 +9377,7 @@ export default function App({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
     setSidebarTab("files");
     setFilesSearchOpen(true);
     setSearchFocusToken((token) => token + 1);
@@ -9372,6 +9389,7 @@ export default function App({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
     setSearchViewOpen(true);
     setSearchViewFocusToken((token) => token + 1);
   }, []);
@@ -9386,6 +9404,7 @@ export default function App({
     setSearchViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
     setInboxViewOpen(true);
   }, []);
 
@@ -9398,6 +9417,7 @@ export default function App({
       setSearchViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
       setInboxViewOpen(false);
       const cwd =
         sessionsRef.current.find((session) => session.id === sessionId)?.cwd ??
@@ -9503,6 +9523,7 @@ export default function App({
     setSearchViewOpen(false);
     setInboxViewOpen(false);
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
     setNotesViewOpen(true);
   }, []);
 
@@ -9517,10 +9538,27 @@ export default function App({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(true);
+    setCalendarViewOpen(false);
+  }, []);
+
+  const onOpenCalendar = useCallback(() => {
+    setFilePickerOpen(false);
+    setSettingsOpen(false);
+    setSearchViewOpen(false);
+    setInboxViewOpen(false);
+    setNotesViewOpen(false);
+    setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
+    setCalendarViewOpen(true);
+  }, []);
+
+  const onLeaveCalendar = useCallback(() => {
+    setCalendarViewOpen(false);
   }, []);
 
   const onLeaveAutomations = useCallback(() => {
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
   }, []);
 
   const onOpenAutomationSession = useCallback(
@@ -9529,6 +9567,7 @@ export default function App({
       if (!session)
         throw new Error("This conversation is no longer available.");
       setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
@@ -9549,6 +9588,7 @@ export default function App({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
       if (section) {
         setSettingsSection(section);
         saveSettingsSection(section);
@@ -9612,6 +9652,11 @@ export default function App({
     }
     if (automationsViewOpen) {
       setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
+      return;
+    }
+    if (calendarViewOpen) {
+      setCalendarViewOpen(false);
       return;
     }
     onVisitBack();
@@ -9622,6 +9667,7 @@ export default function App({
     inboxViewOpen,
     notesViewOpen,
     automationsViewOpen,
+    calendarViewOpen,
   ]);
 
   const onRailForward = useCallback(() => {
@@ -9630,6 +9676,7 @@ export default function App({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setCalendarViewOpen(false);
     onVisitForward();
   }, [onVisitForward]);
 
@@ -9875,6 +9922,7 @@ export default function App({
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
+            calendarViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
             Boolean(whatsNewVersionRef.current);
@@ -9958,6 +10006,7 @@ export default function App({
         !inboxViewOpenRef.current &&
         !notesViewOpenRef.current &&
         !automationsViewOpenRef.current &&
+        !calendarViewOpenRef.current &&
         !(
           e.target instanceof Element &&
           e.target.closest("[data-session-drop], [data-agent-tab]")
@@ -10199,7 +10248,8 @@ export default function App({
     settingsOpen ||
     inboxViewOpen ||
     notesViewOpen ||
-    automationsViewOpen;
+    automationsViewOpen ||
+    calendarViewOpen;
   const compactProjectRail = collapsedProjectRailMode === "compact";
   const compactRailActive = compactProjectRail && !projectRailOpen;
   const compactTitleBar = IS_MAC && compactRailActive && !chromeSurfaceOpen;
@@ -10288,7 +10338,8 @@ export default function App({
                 settingsOpen ||
                 inboxViewOpen ||
                 notesViewOpen ||
-                automationsViewOpen
+                automationsViewOpen ||
+                calendarViewOpen
               }
               canGoForward={tabVisitNav.canForward}
               onGoBack={onRailBack}
@@ -10323,11 +10374,13 @@ export default function App({
               onOpenInboxItem={onOpenLinkedWorkItem}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
+              onOpenCalendar={onOpenCalendar}
               onGoToFile={onGoToFile}
               searchActive={searchViewOpen}
               inboxActive={inboxViewOpen}
               notesActive={notesViewOpen}
               automationsActive={automationsViewOpen}
+              calendarActive={calendarViewOpen}
               notesEnabled={notesEnabled}
               projectRailOpen={projectRailOpen}
               compactProjectRail={compactProjectRail}
@@ -10354,7 +10407,8 @@ export default function App({
                   settingsOpen ||
                   inboxViewOpen ||
                   notesViewOpen ||
-                  automationsViewOpen
+                  automationsViewOpen ||
+                  calendarViewOpen
                     ? "hidden"
                     : "flex min-h-0 min-w-0 flex-1 flex-col"
                 }
@@ -10363,7 +10417,8 @@ export default function App({
                   settingsOpen ||
                   inboxViewOpen ||
                   notesViewOpen ||
-                  automationsViewOpen
+                  automationsViewOpen ||
+                  calendarViewOpen
                 }
                 inert={
                   searchViewOpen ||
@@ -10371,6 +10426,7 @@ export default function App({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
+                  calendarViewOpen ||
                   undefined
                 }
               >
@@ -10534,6 +10590,7 @@ export default function App({
                         !inboxViewOpen &&
                         !notesViewOpen &&
                         !automationsViewOpen &&
+                        !calendarViewOpen &&
                         activeLinkedWorkItemPanel?.sessionId === panel.sessionId
                       }
                       onClose={() => closeLinkedWorkItemPanel(panel.sessionId)}
@@ -10628,6 +10685,19 @@ export default function App({
                   onOpenSession={onOpenAutomationSession}
                 />
               ) : null}
+              {calendarViewOpen ? (
+                <CalendarView
+                  besideRail={projectRailOpen || compactProjectRail}
+                  compactRail={compactRailActive}
+                  cwd={sidebarCwd}
+                  recents={recents}
+                  sessions={inboxRelatedSessions}
+                  onClose={onLeaveCalendar}
+                  onToggleSidebar={onToggleSidebar}
+                  onStart={onStartInboxItem}
+                  onOpenSession={onOpenInboxSession}
+                />
+              ) : null}
               {settingsOpen ? (
                 <SettingsView
                   section={settingsSection}
@@ -10660,6 +10730,7 @@ export default function App({
               inboxViewOpen ||
               notesViewOpen ||
               automationsViewOpen ||
+              calendarViewOpen ||
               settingsOpen ? null : (
                 <UsageFooter
                   providers={usageProviders}

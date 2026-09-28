@@ -12,6 +12,7 @@ import {
   Search,
   Settings,
   Zap,
+  CalendarDays,
 } from "../../shared/ui/icons";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useDragResize } from "../../shared/hooks/useDragResize";
@@ -100,6 +101,8 @@ type Props = {
   notesActive?: boolean;
   onOpenAutomations?: () => void;
   automationsActive?: boolean;
+  onOpenCalendar?: () => void;
+  calendarActive?: boolean;
   onTogglePanel?: () => void;
   onSelectProject: (path: string) => void;
   onOpenProject: () => void;
@@ -136,6 +139,8 @@ export function ProjectRail({
   notesActive = false,
   onOpenAutomations,
   automationsActive = false,
+  onOpenCalendar,
+  calendarActive = false,
   onTogglePanel,
   onSelectProject,
   onOpenProject,
@@ -386,6 +391,15 @@ export function ProjectRail({
               active={automationsActive}
               ariaLabel="Automations"
             />
+            {onOpenCalendar ? (
+              <RailAction
+                label="Calendar"
+                icon={CalendarDays}
+                onClick={onOpenCalendar}
+                active={calendarActive}
+                ariaLabel="Calendar"
+              />
+            ) : null}
           </div>
 
           <div
@@ -408,7 +422,8 @@ export function ProjectRail({
                   searchActive ||
                   inboxActive ||
                   notesActive ||
-                  automationsActive
+                  automationsActive ||
+                  calendarActive
                 }
                 onSelect={onSelectProject}
                 onTogglePin={toggleProjectPin}
@@ -441,7 +456,8 @@ export function ProjectRail({
                         searchActive ||
                         inboxActive ||
                         notesActive ||
-                        automationsActive
+                        automationsActive ||
+                        calendarActive
                       }
                       onSelect={onSelectProject}
                       onTogglePin={toggleProjectPin}
@@ -483,7 +499,11 @@ export function ProjectRail({
               sortable={projectSortable}
               pinned={false}
               searchActive={
-                searchActive || inboxActive || notesActive || automationsActive
+                searchActive ||
+                inboxActive ||
+                notesActive ||
+                automationsActive ||
+                calendarActive
               }
               onSelect={onSelectProject}
               onTogglePin={toggleProjectPin}

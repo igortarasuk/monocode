@@ -25,6 +25,7 @@ mod notes;
 mod notifications;
 mod pasteboard;
 mod pi_usage;
+mod planning;
 mod project_logo;
 mod pty;
 #[cfg(target_os = "macos")]
@@ -356,6 +357,14 @@ pub fn run() {
             linear::linear_issue_details,
             linear::linear_issue_thread,
             linear::linear_issue_comment,
+            linear::linear_sprint,
+            linear::linear_team_states,
+            linear::linear_issue_set_state,
+            planning::planning_hours,
+            planning::planning_set_planned,
+            planning::planning_log_time,
+            planning::planning_delete_entry,
+            planning::planning_spent_by_day,
             jira::jira_status,
             jira::jira_set_config,
             jira::jira_list_projects,

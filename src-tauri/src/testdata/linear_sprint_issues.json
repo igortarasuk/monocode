@@ -1,0 +1,207 @@
+{
+  "data": {
+    "issues": {
+      "nodes": [
+        {
+          "id": "8b2b9dbc-a950-5c0d-87fa-08f6cc597858",
+          "identifier": "ENG-111",
+          "number": 111,
+          "title": "Design the hosts repository",
+          "url": "https://linear.app/acme/issue/ENG-111",
+          "updatedAt": "2026-09-28T09:09:12.159Z",
+          "dueDate": "2026-10-08",
+          "estimate": 4,
+          "description": "Short description of the step.\n\n*Planned: 4h, week 2026-10-05*",
+          "state": {
+            "name": "Todo",
+            "type": "unstarted"
+          },
+          "team": {
+            "id": "0b7f4d1f-9723-5ecc-9629-0692277f1e8b",
+            "key": "ENG",
+            "name": "Engineering"
+          },
+          "project": {
+            "id": "a400e5d7-0409-5a81-9050-3991208ceec1",
+            "name": "Platform"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "label-0",
+                "color": "#26b5ce"
+              }
+            ]
+          },
+          "assignee": {
+            "name": "dev",
+            "displayName": "Dev User",
+            "avatarUrl": null
+          },
+          "parent": {
+            "identifier": "ENG-104"
+          },
+          "children": {
+            "nodes": [
+              {
+                "id": "61f9b9bb-5b87-54f7-aa5d-3401ae29f16d"
+              },
+              {
+                "id": "5f56adc2-c2c5-5c04-bf86-da99bd6399d9"
+              },
+              {
+                "id": "e3c2d58f-ab62-5948-89fd-863c6acdb591"
+              }
+            ]
+          }
+        },
+        {
+          "id": "18f4d6af-03be-5f0c-906c-6872b0fb4051",
+          "identifier": "ENG-124",
+          "number": 124,
+          "title": "Draft the repository layout",
+          "url": "https://linear.app/acme/issue/ENG-124",
+          "updatedAt": "2026-09-28T09:09:14.456Z",
+          "dueDate": "2026-10-01",
+          "estimate": 2,
+          "description": "Short description of the step.\n\n*Planned: 2h, week 2026-09-28*",
+          "state": {
+            "name": "Todo",
+            "type": "unstarted"
+          },
+          "team": {
+            "id": "0b7f4d1f-9723-5ecc-9629-0692277f1e8b",
+            "key": "ENG",
+            "name": "Engineering"
+          },
+          "project": {
+            "id": "a400e5d7-0409-5a81-9050-3991208ceec1",
+            "name": "Platform"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "label-0",
+                "color": "#26b5ce"
+              }
+            ]
+          },
+          "assignee": {
+            "name": "dev",
+            "displayName": "Dev User",
+            "avatarUrl": null
+          },
+          "parent": {
+            "identifier": "ENG-111"
+          },
+          "children": {
+            "nodes": []
+          }
+        },
+        {
+          "id": "9b8cad43-5564-5cd4-b908-74725e438391",
+          "identifier": "ENG-105",
+          "number": 105,
+          "title": "Fix login redirect",
+          "url": "https://linear.app/acme/issue/ENG-105",
+          "updatedAt": "2026-09-28T09:09:00.877Z",
+          "dueDate": "2026-09-28",
+          "estimate": 1,
+          "description": "Short description of the step.",
+          "state": {
+            "name": "Done",
+            "type": "completed"
+          },
+          "team": {
+            "id": "0b7f4d1f-9723-5ecc-9629-0692277f1e8b",
+            "key": "ENG",
+            "name": "Engineering"
+          },
+          "project": {
+            "id": "a400e5d7-0409-5a81-9050-3991208ceec1",
+            "name": "Platform"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "label-0",
+                "color": "#bec2c8"
+              },
+              {
+                "name": "label-1",
+                "color": "#f2994a"
+              }
+            ]
+          },
+          "assignee": {
+            "name": "dev",
+            "displayName": "Dev User",
+            "avatarUrl": null
+          },
+          "parent": null,
+          "children": {
+            "nodes": []
+          }
+        },
+        {
+          "id": "8b4113cc-b4bb-5371-9cbf-c31cec47244d",
+          "identifier": "ENG-100",
+          "number": 100,
+          "title": "Database access through the proxy",
+          "url": "https://linear.app/acme/issue/ENG-100",
+          "updatedAt": "2026-09-28T08:57:50.426Z",
+          "dueDate": "2026-10-09",
+          "estimate": 1,
+          "description": "Short description of the step.",
+          "state": {
+            "name": "In Progress",
+            "type": "started"
+          },
+          "team": {
+            "id": "0b7f4d1f-9723-5ecc-9629-0692277f1e8b",
+            "key": "ENG",
+            "name": "Engineering"
+          },
+          "project": {
+            "id": "a400e5d7-0409-5a81-9050-3991208ceec1",
+            "name": "Platform"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "label-0",
+                "color": "#5e6ad2"
+              },
+              {
+                "name": "label-1",
+                "color": "#26b5ce"
+              }
+            ]
+          },
+          "assignee": {
+            "name": "dev",
+            "displayName": "Dev User",
+            "avatarUrl": null
+          },
+          "parent": null,
+          "children": {
+            "nodes": [
+              {
+                "id": "10de177a-ec8c-5a0e-84ce-73561356bbdf"
+              },
+              {
+                "id": "ea90c78f-3be5-5cde-9889-017dcfab356c"
+              },
+              {
+                "id": "0f3d5178-a5f8-5cc9-8588-6e1150b444a6"
+              },
+              {
+                "id": "ef6b40c5-b42b-5583-b81d-03ba37a73dc9"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

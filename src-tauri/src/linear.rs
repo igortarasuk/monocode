@@ -99,6 +99,51 @@ pub struct LinearIssueThread {
     pub head_ref_name: String,
 }
 
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearCycle {
+    pub id: String,
+    pub number: i64,
+    pub starts_at: String,
+    pub ends_at: String,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearSprintIssue {
+    pub id: String,
+    pub identifier: String,
+    pub title: String,
+    pub url: String,
+    pub state: String,
+    pub state_type: String,
+    pub estimate: Option<f64>,
+    pub due_date: Option<String>,
+    pub planned_hours: Option<i64>,
+    pub parent_identifier: String,
+    pub child_count: usize,
+    pub project_name: String,
+    /// Inbox shape of the same issue, for the shared detail panel.
+    pub issue: LinearIssue,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearState {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub position: f64,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearSprint {
+    pub cycle: Option<LinearCycle>,
+    pub issues: Vec<LinearSprintIssue>,
+}
+
 #[tauri::command(async)]
 pub fn linear_status(app: AppHandle) -> Result<LinearStatus, String> {
     Ok(LinearStatus {
@@ -224,6 +269,152 @@ pub async fn linear_issue_comment(
             json!({ "input": Value::Object(input) }),
         )?;
         parse_linear_comment_create(&data)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// My issues in a team cycle; `offset` 0 is the active cycle, 1 the next.
+#[tauri::command]
+pub async fn linear_sprint(
+    app: AppHandle,
+    team_id: String,
+    offset: i64,
+) -> Result<LinearSprint, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        let team_id = team_id.trim();
+        if !valid_linear_id(team_id) {
+            return Err("Missing Linear team".into());
+        }
+        let data = graphql_with_token(
+            &token,
+            SPRINT_ACTIVE_CYCLE_QUERY,
+            json!({ "teamId": team_id }),
+        )?;
+        let Some(active) = parse_active_cycle(&data) else {
+            return Ok(LinearSprint {
+                cycle: None,
+                issues: Vec::new(),
+            });
+        };
+        let cycle = if offset == 0 {
+            Some(active)
+        } else {
+            let data = graphql_with_token(
+                &token,
+                SPRINT_CYCLE_QUERY,
+                json!({ "teamId": team_id, "number": active.number + offset }),
+            )?;
+            parse_cycle_by_number(&data)
+        };
+        let Some(cycle) = cycle else {
+            return Ok(LinearSprint {
+                cycle: None,
+                issues: Vec::new(),
+            });
+        };
+        let data = graphql_with_token(
+            &token,
+            SPRINT_ISSUES_QUERY,
+            json!({ "cycleId": cycle.id, "first": SPRINT_LIMIT }),
+        )?;
+        Ok(LinearSprint {
+            issues: parse_sprint_issues(&data)?,
+            cycle: Some(cycle),
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+const SPRINT_LIMIT: u32 = 150;
+const SPRINT_ACTIVE_CYCLE_QUERY: &str = r#"
+query SprintActive($teamId: String!) {
+  team(id: $teamId) { activeCycle { id number startsAt endsAt } }
+}
+"#;
+const SPRINT_CYCLE_QUERY: &str = r#"
+query SprintCycle($teamId: String!, $number: Float!) {
+  team(id: $teamId) {
+    cycles(filter: { number: { eq: $number } }, first: 1) {
+      nodes { id number startsAt endsAt }
+    }
+  }
+}
+"#;
+const SPRINT_ISSUES_QUERY: &str = r#"
+query SprintIssues($cycleId: ID!, $first: Int!) {
+  issues(first: $first, filter: {
+    cycle: { id: { eq: $cycleId } },
+    assignee: { isMe: { eq: true } },
+    state: { type: { nin: ["canceled", "duplicate"] } }
+  }) {
+    nodes {
+      id identifier number title url updatedAt dueDate estimate description
+      state { name type }
+      team { id key name }
+      project { id name }
+      labels { nodes { name color } }
+      assignee { name displayName avatarUrl }
+      parent { identifier }
+      children { nodes { id } }
+    }
+  }
+}
+"#;
+
+const TEAM_STATES_QUERY: &str = r#"
+query TeamStates($teamId: String!) {
+  team(id: $teamId) { states { nodes { id name type position } } }
+}
+"#;
+const ISSUE_SET_STATE_MUTATION: &str = r#"
+mutation IssueSetState($id: String!, $stateId: String!) {
+  issueUpdate(id: $id, input: { stateId: $stateId }) {
+    success
+    issue { state { id name type position } }
+  }
+}
+"#;
+
+/// Workflow states of a team, in board order.
+#[tauri::command]
+pub async fn linear_team_states(
+    app: AppHandle,
+    team_id: String,
+) -> Result<Vec<LinearState>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        let team_id = team_id.trim();
+        if !valid_linear_id(team_id) {
+            return Err("Missing Linear team".into());
+        }
+        let data = graphql_with_token(&token, TEAM_STATES_QUERY, json!({ "teamId": team_id }))?;
+        parse_team_states(&data)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn linear_issue_set_state(
+    app: AppHandle,
+    id: String,
+    state_id: String,
+) -> Result<LinearState, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        let (id, state_id) = (id.trim(), state_id.trim());
+        if !valid_linear_id(id) || !valid_linear_id(state_id) {
+            return Err("Missing Linear issue or state".into());
+        }
+        let data = graphql_with_token(
+            &token,
+            ISSUE_SET_STATE_MUTATION,
+            json!({ "id": id, "stateId": state_id }),
+        )?;
+        parse_issue_set_state(&data)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -606,6 +797,116 @@ fn parse_linear_comment_create(data: &Value) -> Result<String, String> {
         .unwrap_or_default())
 }
 
+fn parse_cycle(node: &Value) -> Option<LinearCycle> {
+    let id = string_field(node, "id").filter(|id| !id.is_empty())?;
+    Some(LinearCycle {
+        id,
+        number: node.get("number").and_then(Value::as_f64)? as i64,
+        starts_at: string_field(node, "startsAt").unwrap_or_default(),
+        ends_at: string_field(node, "endsAt").unwrap_or_default(),
+    })
+}
+
+fn parse_active_cycle(data: &Value) -> Option<LinearCycle> {
+    parse_cycle(data.pointer("/team/activeCycle")?)
+}
+
+fn parse_cycle_by_number(data: &Value) -> Option<LinearCycle> {
+    parse_cycle(data.pointer("/team/cycles/nodes/0")?)
+}
+
+fn parse_sprint_issues(data: &Value) -> Result<Vec<LinearSprintIssue>, String> {
+    let nodes = data
+        .pointer("/issues/nodes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Linear did not return issues".to_string())?;
+    Ok(nodes.iter().filter_map(parse_sprint_issue).collect())
+}
+
+fn parse_state(node: &Value) -> Option<LinearState> {
+    Some(LinearState {
+        id: string_field(node, "id").filter(|id| !id.is_empty())?,
+        name: string_field(node, "name").unwrap_or_default(),
+        kind: string_field(node, "type").unwrap_or_default(),
+        position: node.get("position").and_then(Value::as_f64).unwrap_or(0.0),
+    })
+}
+
+fn parse_team_states(data: &Value) -> Result<Vec<LinearState>, String> {
+    let nodes = data
+        .pointer("/team/states/nodes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Linear did not return workflow states".to_string())?;
+    let mut states: Vec<LinearState> = nodes.iter().filter_map(parse_state).collect();
+    states.sort_by(|a, b| a.position.total_cmp(&b.position));
+    Ok(states)
+}
+
+fn parse_issue_set_state(data: &Value) -> Result<LinearState, String> {
+    let update = data
+        .get("issueUpdate")
+        .ok_or_else(|| "Linear did not update the issue".to_string())?;
+    if update.get("success").and_then(Value::as_bool) != Some(true) {
+        return Err("Linear did not update the issue".into());
+    }
+    update
+        .pointer("/issue/state")
+        .and_then(parse_state)
+        .ok_or_else(|| "Linear did not return the new state".into())
+}
+
+fn parse_sprint_issue(node: &Value) -> Option<LinearSprintIssue> {
+    let issue = parse_linear_issue(node)?;
+    let id = issue.id.clone();
+    let state = node.get("state");
+    let description = string_field(node, "description").unwrap_or_default();
+    Some(LinearSprintIssue {
+        id,
+        identifier: string_field(node, "identifier").unwrap_or_default(),
+        title: string_field(node, "title").unwrap_or_default(),
+        url: string_field(node, "url").unwrap_or_default(),
+        state: state
+            .and_then(|value| string_field(value, "name"))
+            .unwrap_or_default(),
+        state_type: state
+            .and_then(|value| string_field(value, "type"))
+            .unwrap_or_default(),
+        estimate: node.get("estimate").and_then(Value::as_f64),
+        due_date: string_field(node, "dueDate").filter(|due| !due.is_empty()),
+        planned_hours: planned_hours(&description),
+        parent_identifier: node
+            .get("parent")
+            .and_then(|value| string_field(value, "identifier"))
+            .unwrap_or_default(),
+        child_count: node
+            .pointer("/children/nodes")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len),
+        project_name: node
+            .get("project")
+            .and_then(|value| string_field(value, "name"))
+            .unwrap_or_default(),
+        issue,
+    })
+}
+
+/// Reads the `*Planned: Nh, week YYYY-MM-DD*` line linear.sh plan-apply writes.
+/// Linear stores `_x_` as `*x*`, so both are accepted.
+fn planned_hours(description: &str) -> Option<i64> {
+    description.lines().find_map(|line| {
+        let line = line.trim();
+        let inner = line
+            .strip_prefix('*')
+            .and_then(|rest| rest.strip_suffix('*'))
+            .or_else(|| {
+                line.strip_prefix('_')
+                    .and_then(|rest| rest.strip_suffix('_'))
+            })?;
+        let hours = inner.strip_prefix("Planned: ")?.split_once("h, week ")?.0;
+        hours.parse().ok()
+    })
+}
+
 fn valid_linear_id(id: &str) -> bool {
     let id = id.trim();
     !id.is_empty()
@@ -735,6 +1036,86 @@ fn write_secret_file(path: &std::path::Path, token: &str) -> Result<(), String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SPRINT_ISSUES: &str = include_str!("testdata/linear_sprint_issues.json");
+    const SPRINT_ACTIVE: &str = include_str!("testdata/linear_sprint_active_cycle.json");
+    const TEAM_STATES: &str = include_str!("testdata/linear_team_states.json");
+
+    #[test]
+    fn team_states_come_in_board_order() {
+        let states = parse_team_states(&parse_graphql_data(TEAM_STATES).unwrap()).unwrap();
+        let names: Vec<&str> = states.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(&names[..4], ["Backlog", "Todo", "In Progress", "Done"]);
+        assert!(states
+            .iter()
+            .any(|s| s.kind == "started" && s.name == "Blocked"));
+    }
+
+    #[test]
+    fn set_state_reads_new_state_or_fails() {
+        let ok = json!({ "issueUpdate": { "success": true, "issue": { "state": {
+            "id": "s1", "name": "In Progress", "type": "started", "position": 2 } } } });
+        assert_eq!(parse_issue_set_state(&ok).unwrap().name, "In Progress");
+        let failed = json!({ "issueUpdate": { "success": false, "issue": null } });
+        assert!(parse_issue_set_state(&failed).is_err());
+    }
+
+    #[test]
+    fn sprint_payloads_parse_through_graphql_envelope() {
+        let active = parse_graphql_data(SPRINT_ACTIVE).unwrap();
+        let cycle = parse_active_cycle(&active).unwrap();
+        assert_eq!(cycle.number, 74);
+        assert_eq!(cycle.starts_at, "2026-09-27T21:00:00.000Z");
+
+        let issues = parse_sprint_issues(&parse_graphql_data(SPRINT_ISSUES).unwrap()).unwrap();
+        assert_eq!(issues.len(), 4);
+        let parent = &issues[0];
+        assert_eq!(parent.child_count, 3);
+        assert_eq!(parent.planned_hours, Some(4));
+        let leaf = &issues[1];
+        assert_eq!(leaf.parent_identifier, "ENG-111");
+        assert_eq!(leaf.estimate, Some(2.0));
+        assert_eq!(leaf.due_date.as_deref(), Some("2026-10-01"));
+        assert_eq!(leaf.planned_hours, Some(2));
+        assert!(issues.iter().any(|issue| issue.state_type == "completed"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.parent_identifier.is_empty()));
+        assert_eq!(leaf.issue.identifier, "ENG-124");
+        assert_eq!(leaf.issue.repo, "ENG");
+        assert_eq!(leaf.issue.provider, "linear");
+    }
+
+    #[test]
+    fn sprint_issue_tolerates_missing_estimate_and_due_date() {
+        let mut node: Value = serde_json::from_str::<Value>(SPRINT_ISSUES).unwrap()["data"]
+            ["issues"]["nodes"][1]
+            .clone();
+        node["estimate"] = Value::Null;
+        node["dueDate"] = Value::Null;
+        node["parent"] = Value::Null;
+        let issue = parse_sprint_issue(&node).unwrap();
+        assert_eq!(issue.estimate, None);
+        assert_eq!(issue.due_date, None);
+        assert_eq!(issue.parent_identifier, "");
+    }
+
+    #[test]
+    fn planned_hours_reads_both_marker_spellings() {
+        assert_eq!(
+            planned_hours("x\n\n*Planned: 3h, week 2026-10-05*"),
+            Some(3)
+        );
+        assert_eq!(planned_hours("_Planned: 7h, week 2026-10-05_"), Some(7));
+        assert_eq!(planned_hours("Planned: 3h, week 2026-10-05"), None);
+        assert_eq!(planned_hours("no marker"), None);
+    }
+
+    #[test]
+    fn missing_cycle_is_none() {
+        assert!(parse_active_cycle(&json!({ "team": { "activeCycle": null } })).is_none());
+        assert!(parse_cycle_by_number(&json!({ "team": { "cycles": { "nodes": [] } } })).is_none());
+    }
 
     #[test]
     fn linear_authorization_sends_the_raw_api_key() {

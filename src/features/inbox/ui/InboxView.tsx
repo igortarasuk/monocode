@@ -224,7 +224,7 @@ type InboxProjectOption = {
   mascotColor: string;
 };
 
-function inboxProjectOptions(
+export function inboxProjectOptions(
   projects: RecentProject[],
   logos: ReturnType<typeof useTabGroupLogos>,
 ): InboxProjectOption[] {

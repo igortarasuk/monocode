@@ -77,10 +77,6 @@ fn normalize_path_for_compare(path: &str) -> String {
     path.to_string()
 }
 
-/// Skills visible for the open project: `.agents/skills` first, then native
-/// harness folders. Same name: earlier roots win.
-/// Excludes disabled paths before deduplication so lower-priority enabled
-/// same-name files can fall through.
 #[tauri::command(async)]
 pub fn list_skills(
     cwd: String,
@@ -88,16 +84,31 @@ pub fn list_skills(
 ) -> Result<Vec<DiscoveredSkill>, String> {
     let project = expand_home(&cwd);
     let home = dirs_home().map(PathBuf::from);
-    Ok(list_skills_from(
+    let claude_dir = crate::harness::default_config_dir_env("CLAUDE_CONFIG_DIR")
+        .or_else(|| home.as_ref().map(|home| home.join(".claude")));
+    Ok(list_skills_with_claude_dir(
         &project,
         home.as_deref(),
+        claude_dir.as_deref(),
         disabled_paths.as_deref(),
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn list_skills_from(
     project: &Path,
     home: Option<&Path>,
+    disabled_paths: Option<&[String]>,
+) -> Vec<DiscoveredSkill> {
+    let claude_dir = home.map(|home| home.join(".claude"));
+    list_skills_with_claude_dir(project, home, claude_dir.as_deref(), disabled_paths)
+}
+
+/// `claude_dir` is the user-level Claude config, `CLAUDE_CONFIG_DIR` or `~/.claude`.
+pub(crate) fn list_skills_with_claude_dir(
+    project: &Path,
+    home: Option<&Path>,
+    claude_dir: Option<&Path>,
     disabled_paths: Option<&[String]>,
 ) -> Vec<DiscoveredSkill> {
     let disabled_filter = DisabledFilter::new(disabled_paths);
@@ -144,7 +155,11 @@ pub(crate) fn list_skills_from(
         (".hermes/skills", "hermes"),
     ] {
         add_root(project.join(dir), "project", source);
-        if let Some(home) = home {
+        if source == "claude" {
+            if let Some(claude_dir) = claude_dir {
+                add_root(claude_dir.join("skills"), "user", source);
+            }
+        } else if let Some(home) = home {
             add_root(home.join(dir), "user", source);
         }
     }
@@ -157,7 +172,10 @@ pub(crate) fn list_skills_from(
         if root.is_dir() {
             add_root(root, "user", "antigravity");
         }
-        for (root, scope, namespace) in claude_plugin_skill_roots(home, project) {
+        let plugin_roots = claude_dir
+            .map(|claude_dir| claude_plugin_skill_roots(home, claude_dir, project))
+            .unwrap_or_default();
+        for (root, scope, namespace) in plugin_roots {
             add_namespaced_root(
                 &mut by_name,
                 root,
@@ -197,8 +215,12 @@ fn add_namespaced_root(
     }
 }
 
-fn claude_plugin_skill_roots(home: &Path, project: &Path) -> Vec<(PathBuf, &'static str, String)> {
-    let registry = home.join(".claude/plugins/installed_plugins.json");
+fn claude_plugin_skill_roots(
+    home: &Path,
+    claude_dir: &Path,
+    project: &Path,
+) -> Vec<(PathBuf, &'static str, String)> {
+    let registry = claude_dir.join("plugins/installed_plugins.json");
     let Ok(raw) = std::fs::read_to_string(registry) else {
         return Vec::new();
     };
@@ -211,7 +233,7 @@ fn claude_plugin_skill_roots(home: &Path, project: &Path) -> Vec<(PathBuf, &'sta
 
     let mut roots = Vec::new();
     for (plugin_id, installed) in plugins {
-        if !claude_plugin_enabled(home, project, plugin_id) {
+        if !claude_plugin_enabled(claude_dir, project, plugin_id) {
             continue;
         }
         let namespace = plugin_id
@@ -272,7 +294,7 @@ fn resolve_home_path(raw: &str, home: &Path) -> PathBuf {
     }
 }
 
-fn claude_plugin_enabled(home: &Path, project: &Path, plugin_id: &str) -> bool {
+fn claude_plugin_enabled(claude_dir: &Path, project: &Path, plugin_id: &str) -> bool {
     if let Some(enabled) = managed_plugin_setting(plugin_id) {
         return enabled;
     }
@@ -280,7 +302,7 @@ fn claude_plugin_enabled(home: &Path, project: &Path, plugin_id: &str) -> bool {
     for settings in [
         project_root.join(".claude/settings.local.json"),
         project_root.join(".claude/settings.json"),
-        home.join(".claude/settings.json"),
+        claude_dir.join("settings.json"),
     ] {
         if let Some(enabled) = plugin_setting(&settings, plugin_id) {
             return enabled;
@@ -831,6 +853,52 @@ mod tests {
     }
 
     #[test]
+    fn custom_claude_config_dir_replaces_home_claude() {
+        let project = tmp("proj-claude-config-dir");
+        let home = tmp("home-claude-config-dir");
+        let config = home.0.join(".claude-work");
+        write_skill(
+            &config.join("skills"),
+            "week-plan",
+            "---\nname: week-plan\ndescription: From config dir\n---\n",
+        );
+        write_skill(
+            &home.0.join(".claude/skills"),
+            "stale",
+            "---\nname: stale\ndescription: Ignored home copy\n---\n",
+        );
+        let plugin = config.join("plugins/cache/community/workflow-kit/1.2.3");
+        write_skill(
+            &plugin.join("skills"),
+            "quick-plan",
+            "---\nname: quick-plan\ndescription: Plan from plugin\n---\n",
+        );
+        std::fs::write(
+            config.join("plugins/installed_plugins.json"),
+            r#"{"version":2,"plugins":{"workflow-kit@community":[{"scope":"user","installPath":"~/.claude-work/plugins/cache/community/workflow-kit/1.2.3","version":"1.2.3"}]}}"#,
+        )
+        .unwrap();
+
+        let skills = list_skills_with_claude_dir(&project.0, Some(&home.0), Some(&config), None);
+        let week = skills.iter().find(|s| s.name == "week-plan").unwrap();
+        assert_eq!(
+            (week.source.as_str(), week.scope.as_str()),
+            ("claude", "user")
+        );
+        assert!(skills.iter().any(|s| s.name == "workflow-kit:quick-plan"));
+        assert!(!skills.iter().any(|s| s.name == "stale"));
+
+        // The plugin toggle is read from the config dir settings.
+        std::fs::write(
+            config.join("settings.json"),
+            r#"{"enabledPlugins":{"workflow-kit@community":false}}"#,
+        )
+        .unwrap();
+        let skills = list_skills_with_claude_dir(&project.0, Some(&home.0), Some(&config), None);
+        assert!(!skills.iter().any(|s| s.name == "workflow-kit:quick-plan"));
+    }
+
+    #[test]
     fn claude_project_plugins_only_apply_to_their_project() {
         let project = tmp("proj-claude-scoped");
         let other = tmp("other-claude-scoped");
@@ -911,7 +979,7 @@ mod tests {
         write_plugin_setting(&home.0, "settings.json", "workflow-kit@community", false);
         write_plugin_setting(&project.0, "settings.json", "workflow-kit@community", true);
         assert!(claude_plugin_enabled(
-            &home.0,
+            &home.0.join(".claude"),
             &nested,
             "workflow-kit@community"
         ));
@@ -922,7 +990,7 @@ mod tests {
             false,
         );
         assert!(!claude_plugin_enabled(
-            &home.0,
+            &home.0.join(".claude"),
             &nested,
             "workflow-kit@community"
         ));

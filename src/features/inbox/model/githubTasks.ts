@@ -866,7 +866,7 @@ async function fetchLinearInboxItems(query: InboxQuery): Promise<InboxItem[]> {
     .map(linearIssueToInboxItem);
 }
 
-function linearIssueToInboxItem(issue: LinearIssue): InboxItem {
+export function linearIssueToInboxItem(issue: LinearIssue): InboxItem {
   return {
     provider: "linear",
     kind: "linear",

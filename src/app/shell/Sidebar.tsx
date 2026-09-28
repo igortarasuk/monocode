@@ -25,6 +25,7 @@ import {
   Settings,
   StickyNote,
   Zap,
+  CalendarDays,
 } from "../../shared/ui/icons";
 import {
   memo,
@@ -262,11 +263,13 @@ type Props = {
   onOpenInboxItem?: (item: LinkedWorkItem, sessionId: string) => void;
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
+  onOpenCalendar?: () => void;
   onGoToFile?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
   automationsActive?: boolean;
+  calendarActive?: boolean;
   notesEnabled?: boolean;
   onToggleProjectRail?: () => void;
   projectRailOpen?: boolean;
@@ -348,11 +351,13 @@ function SidebarComponent({
   onOpenInboxItem,
   onOpenNotes,
   onOpenAutomations,
+  onOpenCalendar,
   onGoToFile,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
   automationsActive = false,
+  calendarActive = false,
   notesEnabled = true,
   onToggleProjectRail,
   projectRailOpen = true,
@@ -585,6 +590,7 @@ function SidebarComponent({
     !inboxActive &&
     !notesActive &&
     !automationsActive &&
+    !calendarActive &&
     !settingsOpen &&
     inProject;
   const sidebarVisible = open && sidebarAvailable;
@@ -1427,10 +1433,12 @@ function SidebarComponent({
               onOpenNotificationSettings={onOpenNotificationSettings}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
+              onOpenCalendar={onOpenCalendar}
               searchActive={searchActive}
               inboxActive={inboxActive}
               notesActive={notesActive}
               automationsActive={automationsActive}
+              calendarActive={calendarActive}
               inboxUnseen={inboxUnseen}
             />
           ) : null}
@@ -1928,7 +1936,9 @@ function SidebarComponent({
           onOpenNotes={notesEnabled ? onOpenNotes : undefined}
           notesActive={notesActive}
           onOpenAutomations={onOpenAutomations}
+          onOpenCalendar={onOpenCalendar}
           automationsActive={automationsActive}
+          calendarActive={calendarActive}
           onOpenSettings={onOpenSettings}
           onTogglePanel={onToggleProjectRail}
           onLeaveActive={onGoBack}
@@ -1956,7 +1966,9 @@ function SidebarComponent({
           onOpenNotes={onOpenNotes}
           notesActive={notesActive}
           onOpenAutomations={onOpenAutomations}
+          onOpenCalendar={onOpenCalendar}
           automationsActive={automationsActive}
+          calendarActive={calendarActive}
           onTogglePanel={onToggleProjectRail}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2033,10 +2045,12 @@ function SidebarProjectPicker({
   onOpenNotificationSettings,
   onOpenNotes,
   onOpenAutomations,
+  onOpenCalendar,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
   automationsActive = false,
+  calendarActive = false,
   inboxUnseen = false,
 }: {
   cwd: string;
@@ -2051,10 +2065,12 @@ function SidebarProjectPicker({
   onOpenNotificationSettings?: (projectPath?: string) => void;
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
+  onOpenCalendar?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
   automationsActive?: boolean;
+  calendarActive?: boolean;
   inboxUnseen?: boolean;
 }) {
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(
@@ -2129,6 +2145,15 @@ function SidebarProjectPicker({
             <Zap className="size-3.5" strokeWidth={1.75} />
           </IconButton>
         ) : null}
+        {onOpenCalendar ? (
+          <IconButton
+            label="Calendar"
+            active={calendarActive}
+            onClick={onOpenCalendar}
+          >
+            <CalendarDays className="size-3.5" strokeWidth={1.75} />
+          </IconButton>
+        ) : null}
       </div>
       {inboxMenu ? (
         <InboxNotificationMenu
@@ -2167,7 +2192,9 @@ function CompactProjectRail({
   onOpenNotes,
   notesActive,
   onOpenAutomations,
+  onOpenCalendar,
   automationsActive,
+  calendarActive,
   onOpenSettings,
   onTogglePanel,
   onLeaveActive,
@@ -2194,7 +2221,9 @@ function CompactProjectRail({
   onOpenNotes?: () => void;
   notesActive: boolean;
   onOpenAutomations?: () => void;
+  onOpenCalendar?: () => void;
   automationsActive: boolean;
+  calendarActive: boolean;
   onOpenSettings?: () => void;
   onTogglePanel?: () => void;
   onLeaveActive?: () => void;
@@ -2207,7 +2236,11 @@ function CompactProjectRail({
   const action = (active: boolean, open?: () => void) =>
     active && onLeaveActive ? onLeaveActive : open;
   const workspaceActive =
-    !searchActive && !inboxActive && !notesActive && !automationsActive;
+    !searchActive &&
+    !inboxActive &&
+    !notesActive &&
+    !automationsActive &&
+    !calendarActive;
   const openWorkspaceTab = (nextTab: SidebarTab) => {
     if (!workspaceActive) onLeaveActive?.();
     onTabChange(nextTab);
@@ -2306,6 +2339,14 @@ function CompactProjectRail({
           active={automationsActive}
           onClick={action(automationsActive, onOpenAutomations)}
         />
+        {onOpenCalendar ? (
+          <CompactRailAction
+            label="Calendar"
+            icon={CalendarDays}
+            active={calendarActive}
+            onClick={action(calendarActive, onOpenCalendar)}
+          />
+        ) : null}
       </div>
       <div className="min-h-2 flex-1" />
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
