@@ -7,6 +7,7 @@ import {
   defaultSessionChoice,
   encodeModelLaunchId,
   firstEnabledHarness,
+  harnessCatalogError,
   hasLiveCatalog,
   isPickerProviderVisible,
   loadDefaultModels,
@@ -27,6 +28,7 @@ import {
   saveLastModelSettings,
   savePickerProviderVisible,
   saveRecentModelChoice,
+  setHarnessCatalogError,
   setHarnessModels,
   showProviderInModelPicker,
   stepModelPickerTab,
@@ -404,6 +406,14 @@ describe("live catalog overlays", () => {
       harness: "codex",
       name: "Codex",
     });
+  });
+
+  it("keeps the last catalog error until a probe succeeds", () => {
+    expect(harnessCatalogError("opencode")).toBeNull();
+    setHarnessCatalogError("opencode", "  opencode timed out  ");
+    expect(harnessCatalogError("opencode")).toBe("opencode timed out");
+    setHarnessCatalogError("opencode", null);
+    expect(harnessCatalogError("opencode")).toBeNull();
   });
 
   it("is empty until a CLI catalog replaces the fallback list", () => {

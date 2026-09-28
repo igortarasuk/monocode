@@ -67,6 +67,7 @@ import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import {
   resetHarnessModelOverlays,
   saveRecentModelChoice,
+  setHarnessCatalogError,
   setHarnessModels,
 } from "../model/models";
 
@@ -336,6 +337,41 @@ describe("model picker", () => {
       ),
     ).toEqual(["OpenAI"]);
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(2);
+  });
+
+  it("explains why a live catalog is missing", () => {
+    setHarnessCatalogError(
+      "opencode",
+      "OpenCode v1.4.6 is too old. Upgrade to v1.14.19 or newer.",
+    );
+    act(() =>
+      root.render(
+        createElement(ModelPicker, {
+          harness: "opencode",
+          model: "opencode:glm-5",
+          values: {},
+          onChange: vi.fn(),
+          onSettingsChange: vi.fn(),
+        }),
+      ),
+    );
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-haspopup="menu"]',
+    )!;
+    act(() => trigger.click());
+    const modelRow = [
+      ...container.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((button) => button.textContent?.startsWith("Model"))!;
+    hover(modelRow);
+
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      "OpenCode model list not loaded: OpenCode v1.4.6 is too old. Upgrade to v1.14.19 or newer.",
+    );
+    expect(container.querySelectorAll('[role="option"]').length).toBeGreaterThan(0);
+
+    act(() => setHarnessCatalogError("opencode", null));
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    act(() => resetHarnessModelOverlays());
   });
 
   it("names the source of same-name favorites from different providers", () => {

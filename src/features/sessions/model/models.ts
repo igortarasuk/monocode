@@ -283,10 +283,28 @@ export function hasLiveCatalog(harness: HarnessId): boolean {
   return overlays[harness] != null;
 }
 
+let catalogErrors: Partial<Record<HarnessId, string>> = {};
+
+/** Why the last live catalog probe failed; null clears it. */
+export function setHarnessCatalogError(
+  harness: HarnessId,
+  message: string | null,
+) {
+  const next = message?.trim().slice(0, 240) || undefined;
+  if (catalogErrors[harness] === next) return;
+  catalogErrors = { ...catalogErrors, [harness]: next };
+  emit();
+}
+
+export function harnessCatalogError(harness: HarnessId): string | null {
+  return catalogErrors[harness] ?? null;
+}
+
 /** Test seam. */
 export function resetHarnessModelOverlays() {
   overlays = {};
   overlayDefaults = {};
+  catalogErrors = {};
   emit();
 }
 

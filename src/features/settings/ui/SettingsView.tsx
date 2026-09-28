@@ -167,6 +167,8 @@ import {
   defaultModelId,
   firstEnabledHarness,
   getModelSnapshot,
+  harnessCatalogError,
+  hasLiveCatalog,
   loadDefaultModels,
   loadHiddenPickerProviders,
   loadLastModelChoice,
@@ -3738,13 +3740,16 @@ function ProviderRow({
 }) {
   const models = modelsFor(harness);
   const available = isHarnessAvailable(harness);
+  const live = hasLiveCatalog(harness);
+  const catalogError = harnessCatalogError(harness);
   const current =
     models.length > 0 ? resolveModel(harness, selectedModel) : null;
 
+  // The built-in list is only a stand-in until the CLI answers.
   useEffect(() => {
-    if (!available || models.length > 0) return;
+    if (!available || live) return;
     void refreshHarnessCatalogs([harness]);
-  }, [available, harness, models.length]);
+  }, [available, harness, live]);
 
   return (
     <Row
@@ -3761,9 +3766,11 @@ function ProviderRow({
         </span>
       }
       description={
-        available
-          ? `${models.length} ${models.length === 1 ? "model" : "models"} available.`
-          : harnessUnavailableHint(harness)
+        !available
+          ? harnessUnavailableHint(harness)
+          : catalogError
+            ? `${models.length} built-in models. CLI list not loaded: ${catalogError}`
+            : `${models.length} ${models.length === 1 ? "model" : "models"} available.`
       }
     >
       {current ? (

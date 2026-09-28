@@ -5,7 +5,10 @@ import type {
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
-import { hasLiveCatalog } from "../../../features/sessions/model/models";
+import {
+  hasLiveCatalog,
+  setHarnessCatalogError,
+} from "../../../features/sessions/model/models";
 import type { UserQuestionReply } from "../../../features/sessions/model/userQuestion";
 import type { NativeCommandProvider } from "./nativeCommands";
 import type {
@@ -389,9 +392,14 @@ export async function refreshHarnessCatalogs(
         if (!adapter.refreshCatalog || hasLiveCatalog(adapter.id)) return;
         await adapter.refreshCatalog().catch((error: unknown) => {
           console.debug(`[monocode] ${adapter.id} catalog`, error);
+          setHarnessCatalogError(adapter.id, errorText(error));
         });
       }),
   );
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export async function generateHarnessTitle(

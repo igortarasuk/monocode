@@ -23,6 +23,7 @@ import {
   findModel,
   getModelSnapshot,
   getPickerVisibilitySnapshot,
+  harnessCatalogError,
   isEffortSettingId,
   loadFavoriteModels,
   loadRecentModelChoices,
@@ -1247,6 +1248,7 @@ function ModelFlyout({
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const activeRef = useRef<HTMLButtonElement>(null);
   const groups = modelGroups(tab, models);
+  const catalogError = tab === "favorites" ? null : harnessCatalogError(tab);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest" });
@@ -1378,6 +1380,15 @@ function ModelFlyout({
           aria-label="Models"
           className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1"
         >
+          {catalogError ? (
+            <div
+              role="status"
+              className="mx-1 mt-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] leading-4 text-amber-600 dark:text-amber-300"
+            >
+              {HARNESS_TITLE[tab as HarnessId]} model list not loaded:{" "}
+              {catalogError}
+            </div>
+          ) : null}
           {models.length === 0 ? (
             <div className="px-2 py-3 text-[12px] text-content/50">
               {tab === "favorites" && !query.trim()

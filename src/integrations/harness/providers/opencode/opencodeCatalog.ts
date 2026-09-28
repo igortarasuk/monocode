@@ -1,5 +1,6 @@
 import { homeDir } from "../../../../platform/tauri/fs";
 import {
+  setHarnessCatalogError,
   setHarnessModels,
   type AgentModel,
   type ModelSetting,
@@ -54,10 +55,18 @@ export function refreshOpenCodeCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverOpenCodeModels()
     .then((models) => {
-      if (models.length > 0) setHarnessModels("opencode", models);
+      if (models.length === 0) {
+        throw new Error("`opencode models` listed no models");
+      }
+      setHarnessModels("opencode", models);
+      setHarnessCatalogError("opencode", null);
     })
     .catch((error: unknown) => {
       console.debug("[monocode] opencode catalog", error);
+      setHarnessCatalogError(
+        "opencode",
+        error instanceof Error ? error.message : String(error),
+      );
     })
     .finally(() => {
       inflight = null;
