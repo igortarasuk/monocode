@@ -26,6 +26,8 @@ fi
 # Remember conflict resolutions so repeats resolve themselves.
 git config rerere.enabled true
 git config rerere.autoupdate true
+# Keep our README when upstream edits it (.gitattributes).
+git config merge.ours.driver true
 
 git fetch --quiet "$REMOTE"
 INCOMING="$(git rev-list --count "HEAD..$REMOTE/$REF")"
