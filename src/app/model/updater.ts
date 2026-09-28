@@ -58,7 +58,7 @@ export async function runUpdateFlow(
       const current: UpdaterSnapshot = { phase: "current", currentVersion };
       onProgress?.(current);
       if (manual) {
-        await message("You're on the latest version.", { title: "MonoCode" });
+        await message("You're on the latest version.", { title: "Monochrome" });
       }
       return current;
     }
@@ -77,7 +77,7 @@ export async function runUpdateFlow(
     const notes = update.body?.trim();
     const detail = notes ? `\n\n${notes}` : "";
     const yes = await ask(
-      `MonoCode ${update.version} is available (you have ${currentVersion}).${detail}\n\nInstall now?`,
+      `Monochrome ${update.version} is available (you have ${currentVersion}).${detail}\n\nInstall now?`,
       { title: "Update available", kind: "info" },
     );
     if (!yes) return available;
@@ -91,7 +91,7 @@ export async function runUpdateFlow(
       if (manual) {
         await message(
           "Automatic updates aren't configured for this build.\n\nDownload releases at https://github.com/hardbeat920/monocode/releases/latest",
-          { title: "MonoCode" },
+          { title: "Monochrome" },
         );
       }
       return idle;
@@ -102,7 +102,7 @@ export async function runUpdateFlow(
     onProgress?.(failed);
     if (manual) {
       await message(`Couldn't check for updates.\n\n${error}`, {
-        title: "MonoCode",
+        title: "Monochrome",
       });
     }
     return failed;
@@ -169,7 +169,7 @@ export async function installPendingUpdate(
       error,
     };
     onProgress?.(failed);
-    await message(`Couldn't install the update.\n\n${error}`, { title: "MonoCode" });
+    await message(`Couldn't install the update.\n\n${error}`, { title: "Monochrome" });
     return failed;
   }
 }

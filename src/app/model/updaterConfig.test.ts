@@ -42,7 +42,7 @@ describe("updater", () => {
     });
     expect(message).toHaveBeenCalledWith(
       expect.stringContaining("https://github.com/hardbeat920/monocode/releases/latest"),
-      { title: "MonoCode" },
+      { title: "Monochrome" },
     );
   });
 

@@ -394,9 +394,9 @@ describe("confirming reload", () => {
   it("allows reload after unsaved changes are confirmed", async () => {
     await expect(confirmReload(true)).resolves.toBe(true);
     expect(ask).toHaveBeenCalledWith(
-      "Reload MonoCode and discard unsaved changes?",
+      "Reload Monochrome and discard unsaved changes?",
       {
-        title: "MonoCode",
+        title: "Monochrome",
         kind: "warning",
         okLabel: "Reload",
       },
