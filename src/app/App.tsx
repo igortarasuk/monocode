@@ -426,6 +426,7 @@ import { exhaustedWindowResetAt } from "../features/providers/model/rateLimits";
 import { dropContextWindow } from "../features/sessions/model/contextUsage";
 import {
   discardDraftSessionRecord,
+  deleteSession,
   getSession,
   listLinkedSessions,
   listSessionsByProject,
@@ -3846,21 +3847,27 @@ export default function App({
       removingSessionIds.current.add(id);
       try {
         await stopSessionForRemoval(id);
+        const stopped =
+          sessionsRef.current.find((session) => session.id === id) ?? current;
         await Promise.all(
-          sessionChildHarnesses(current).map((harness) =>
+          sessionChildHarnesses(stopped).map((harness) =>
             forgetHarnessSession(harness, id),
           ),
         );
+        const imagePaths = stopped.blocks.flatMap((block) =>
+          block.role === "image" && block.image ? [block.image.path] : [],
+        );
+        await deleteSession(id, imagePaths);
         const fresh = {
           ...newSession(
-            current.harness,
-            current.cwd,
-            current.model,
-            current.runtimeMode,
-            current.modelSettings,
+            stopped.harness,
+            stopped.cwd,
+            stopped.model,
+            stopped.runtimeMode,
+            stopped.modelSettings,
           ),
-          title: current.title,
-          inboxAsk: current.inboxAsk,
+          title: stopped.title,
+          inboxAsk: stopped.inboxAsk,
         };
         const next = sessionsRef.current.map((session) =>
           session.id === id ? fresh : session,
@@ -6100,6 +6107,7 @@ export default function App({
         ...(rawCommand ? undefined : userTurnCards(noteCard, card)),
         ...(ciContext ? { ciContext } : {}),
         ...(operatorCommand.matched ? { monocode: true } : {}),
+        ...(intent === "plan" || intent === "orchestrate" ? { intent } : {}),
         ...(options?.appRequestId ? { appRequestId: options.appRequestId } : {}),
         // The orchestrator writes these turns, not the user; hide them.
         ...(options?.managed ? { internal: true } : {}),
@@ -6214,7 +6222,9 @@ export default function App({
           }),
         );
       };
-      if (!options?.resendEdited) flushSync(commitSubmittedTurn);
+      if (!options?.resendEdited) {
+        flushSync(commitSubmittedTurn);
+      }
 
       const launchTitleGeneration = (workCwd: string) => {
         if (
@@ -6507,12 +6517,16 @@ export default function App({
         const recoverEditedResend = () => {
           if (!editedResend || editedResend.isAccepted()) return;
           pendingEditedEvents.length = 0;
+          const previous = sessionsRef.current.find(
+            (session) => session.id === sessionId,
+          );
+          const recovered = previous
+            ? editedResend.recoverAfterFailure(previous)
+            : undefined;
           flushSync(() => {
             setSessions((prev) =>
               prev.map((session) =>
-                session.id === sessionId
-                  ? editedResend.recoverAfterFailure(session)
-                  : session,
+                session.id === sessionId && recovered ? recovered : session,
               ),
             );
           });

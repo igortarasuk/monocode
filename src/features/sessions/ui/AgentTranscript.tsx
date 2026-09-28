@@ -30,7 +30,10 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { AttachmentChip } from "./AttachmentChip";
+import { GeneratedImage } from "./GeneratedImage";
 import { MonocodeSparkles } from "./MonocodeSparkles";
+import { OrchestratorConstellation } from "./OrchestratorConstellation";
+import { PlanStepsBurst } from "./PlanStepsBurst";
 import { FilePreview } from "../../files/ui/FilePreview";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
@@ -1457,6 +1460,10 @@ const TranscriptBlock = memo(function TranscriptBlock({
     );
   }
 
+  if (block.role === "image") {
+    return block.image ? <GeneratedImage image={block.image} /> : null;
+  }
+
   if (block.role === "tool") {
     return (
       <ToolCall
@@ -1777,6 +1784,13 @@ function UserMessageBlock({
           ) : null}
           {monocode ? (
             <MonocodeSparkles blockId={block.id} startedAt={block.startedAt} />
+          ) : block.intent === "plan" ? (
+            <PlanStepsBurst blockId={block.id} startedAt={block.startedAt} />
+          ) : block.intent === "orchestrate" ? (
+            <OrchestratorConstellation
+              blockId={block.id}
+              startedAt={block.startedAt}
+            />
           ) : null}
         </div>
         {text ||
