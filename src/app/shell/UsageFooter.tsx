@@ -30,6 +30,7 @@ import {
 import { MOD } from "../../platform/tauri/platform";
 import { UsageProviderChip } from "./UsageProviderChip";
 import { PiUsage } from "./PiUsage";
+import { PipelineChip } from "./PipelineChip";
 import {
   ProviderSignInPanel,
   type ProviderSignInState,
@@ -369,6 +370,7 @@ export function UsageFooter({
       ) : session ? (
         <SessionChip key={session.id ?? session.harness} session={session} />
       ) : null}
+      <PipelineChip project={project} />
       {showTerminals || showTerminalButton ? (
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {showTerminals ? (

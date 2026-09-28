@@ -961,12 +961,15 @@ fn gitlab_repo_for(root: &Path, gitlab_url: &str) -> Result<String, String> {
 fn project_from_remote(remote: &str, gitlab_url: &str) -> Option<String> {
     let configured = configured_remote(gitlab_url)?;
     let (authority, mut path) = remote_authority_path(remote)?;
-    if host_without_port(&authority) != host_without_port(&configured.authority) {
+    let remote_host = host_without_port(&authority);
+    let configured_host = host_without_port(&configured.authority);
+    let aliased = remote_host != configured_host;
+    if aliased && !ssh_alias_of(remote, &remote_host, &configured_host) {
         return None;
     }
     path = path.trim_matches('/').to_string();
     let prefix = configured.path.trim_matches('/');
-    if !prefix.is_empty() {
+    if !prefix.is_empty() && !aliased {
         path = path.strip_prefix(&format!("{prefix}/"))?.to_string();
     }
     if let Some(stripped) = path.strip_suffix(".git") {
@@ -976,6 +979,19 @@ fn project_from_remote(remote: &str, gitlab_url: &str) -> Option<String> {
         return None;
     }
     Some(path)
+}
+
+/// SSH remote host that serves the configured GitLab host.
+fn ssh_alias_of(remote: &str, remote_host: &str, gitlab_host: &str) -> bool {
+    let web = remote.starts_with("https://") || remote.starts_with("http://");
+    if web {
+        return false;
+    }
+    let mapped = read_glab_config().and_then(|config| glab_host_for_ssh(&config, remote_host));
+    match mapped {
+        Some(host) => host == gitlab_host,
+        None => same_site(remote_host, gitlab_host),
+    }
 }
 
 struct ConfiguredRemote {
@@ -1285,6 +1301,199 @@ pub(crate) fn gitlab_mr_create_for(
         .ok_or_else(|| "GitLab did not return a merge request URL".into())
 }
 
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitlabPipelineJob {
+    pub id: i64,
+    pub name: String,
+    pub status: String,
+    pub url: String,
+    pub allow_failure: bool,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitlabPipelineStage {
+    pub name: String,
+    pub status: String,
+    pub jobs: Vec<GitlabPipelineJob>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitlabPipeline {
+    pub id: i64,
+    pub status: String,
+    pub ref_name: String,
+    pub sha: String,
+    pub url: String,
+    pub updated_at: String,
+    pub stages: Vec<GitlabPipelineStage>,
+}
+
+/// Latest pipeline of the current branch; None without GitLab.
+#[tauri::command]
+pub async fn gitlab_pipeline(
+    app: AppHandle,
+    cwd: String,
+) -> Result<Option<GitlabPipeline>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = expand_home(&cwd);
+        let Some(remote) = gitlab_review_remote(&app, &root) else {
+            return Ok(None);
+        };
+        let Some(branch) = current_branch(&root) else {
+            return Ok(None);
+        };
+        gitlab_pipeline_for(&app, &root, &remote, &branch)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn gitlab_pipeline_for(
+    app: &AppHandle,
+    root: &Path,
+    remote: &ReviewRemote,
+    branch: &str,
+) -> Result<Option<GitlabPipeline>, String> {
+    if glab_authenticated(&remote.host) {
+        let result = glab_run(
+            root,
+            &[
+                "ci",
+                "get",
+                "--repo",
+                &remote.glab_repo(),
+                "--branch",
+                branch,
+                "--output",
+                "json",
+            ],
+        );
+        let json = match result {
+            Ok(json) => json,
+            Err(error) if error.to_ascii_lowercase().contains("no pipeline") => {
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
+        let value: Value =
+            serde_json::from_str(&json).map_err(|_| "glab returned invalid JSON".to_string())?;
+        let jobs = value.get("jobs").cloned().unwrap_or(Value::Null);
+        return Ok(parse_pipeline(&value, &jobs));
+    }
+    let config = api_config_for(app, remote)?;
+    let project = encode_path_component(&remote.project);
+    let path = format!(
+        "/projects/{project}/pipelines?ref={}&order_by=id&sort=desc&per_page=1",
+        encode_path_component(branch)
+    );
+    let list = gitlab_get(&config, &path)?.value;
+    let Some(pipeline) = list.as_array().and_then(|rows| rows.first()).cloned() else {
+        return Ok(None);
+    };
+    let Some(id) = pipeline.get("id").and_then(Value::as_i64) else {
+        return Ok(None);
+    };
+    let jobs_path = format!("/projects/{project}/pipelines/{id}/jobs?per_page=100");
+    let jobs = gitlab_get(&config, &jobs_path)?.value;
+    Ok(parse_pipeline(&pipeline, &jobs))
+}
+
+fn parse_pipeline(pipeline: &Value, jobs: &Value) -> Option<GitlabPipeline> {
+    let id = pipeline.get("id").and_then(Value::as_i64)?;
+    let mut rows: Vec<(i64, String, GitlabPipelineJob)> = jobs
+        .as_array()
+        .map(|rows| rows.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|row| {
+            let job = GitlabPipelineJob {
+                id: row.get("id").and_then(Value::as_i64)?,
+                name: string_field(row, "name").unwrap_or_default(),
+                status: string_field(row, "status").unwrap_or_default(),
+                url: string_field(row, "web_url").unwrap_or_default(),
+                allow_failure: row
+                    .get("allow_failure")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            };
+            Some((job.id, string_field(row, "stage").unwrap_or_default(), job))
+        })
+        .collect();
+    rows.sort_by_key(|(id, _, _)| *id);
+    let mut stages: Vec<GitlabPipelineStage> = Vec::new();
+    for (_, stage, job) in rows {
+        match stages.iter_mut().find(|known| known.name == stage) {
+            Some(known) => known.jobs.push(job),
+            None => stages.push(GitlabPipelineStage {
+                name: stage,
+                status: String::new(),
+                jobs: vec![job],
+            }),
+        }
+    }
+    for stage in &mut stages {
+        stage.status = stage_status(&stage.jobs);
+    }
+    Some(GitlabPipeline {
+        id,
+        status: string_field(pipeline, "status").unwrap_or_default(),
+        ref_name: string_field(pipeline, "ref").unwrap_or_default(),
+        sha: string_field(pipeline, "sha").unwrap_or_default(),
+        url: string_field(pipeline, "web_url").unwrap_or_default(),
+        updated_at: string_field(pipeline, "updated_at").unwrap_or_default(),
+        stages,
+    })
+}
+
+/// Worst job status wins; allowed failures count as warnings.
+fn stage_status(jobs: &[GitlabPipelineJob]) -> String {
+    const ORDER: [&str; 12] = [
+        "failed",
+        "running",
+        "pending",
+        "preparing",
+        "waiting_for_resource",
+        "created",
+        "scheduled",
+        "manual",
+        "canceled",
+        "warning",
+        "success",
+        "skipped",
+    ];
+    let effective = |job: &GitlabPipelineJob| {
+        if job.status == "failed" && job.allow_failure {
+            "warning".to_string()
+        } else {
+            job.status.clone()
+        }
+    };
+    jobs.iter()
+        .map(effective)
+        .min_by_key(|status| {
+            ORDER
+                .iter()
+                .position(|known| known == status)
+                .unwrap_or(ORDER.len())
+        })
+        .unwrap_or_default()
+}
+
+fn current_branch(root: &Path) -> Option<String> {
+    let mut cmd = Command::new("git");
+    crate::hide_window_console(&mut cmd);
+    let output = cmd
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .current_dir(root)
+        .output()
+        .ok()?;
+    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !branch.is_empty()).then_some(branch)
+}
+
 pub(crate) struct MrCreateFields<'a> {
     pub title: &'a str,
     pub body: &'a str,
@@ -1489,6 +1698,35 @@ mod tests {
     }
 
     #[test]
+    fn groups_pipeline_jobs_into_ordered_stages() {
+        let pipeline = json!({"id": 7, "status": "failed", "ref": "main", "sha": "abc",
+            "web_url": "https://g/p/-/pipelines/7", "updated_at": "2026-09-28T10:00:00Z"});
+        let jobs = json!([
+            {"id": 4, "name": "apply", "stage": "deploy", "status": "manual", "web_url": "u4"},
+            {"id": 3, "name": "lint", "stage": "test", "status": "failed", "allow_failure": true},
+            {"id": 2, "name": "unit", "stage": "test", "status": "success"},
+            {"id": 1, "name": "image", "stage": "build", "status": "success"}
+        ]);
+        let parsed = parse_pipeline(&pipeline, &jobs).unwrap();
+        let stages: Vec<(&str, &str)> = parsed
+            .stages
+            .iter()
+            .map(|stage| (stage.name.as_str(), stage.status.as_str()))
+            .collect();
+        assert_eq!(
+            stages,
+            [
+                ("build", "success"),
+                ("test", "warning"),
+                ("deploy", "manual")
+            ]
+        );
+        assert_eq!(parsed.stages[1].jobs[0].name, "unit");
+        assert_eq!(parsed.url, "https://g/p/-/pipelines/7");
+        assert!(parse_pipeline(&json!({}), &jobs).is_none());
+    }
+
+    #[test]
     fn mr_list_prefers_open_then_latest() {
         let rows = json!([
             {"iid": 3, "title": "Old", "web_url": "https://g/x/-/merge_requests/3", "state": "merged"},
@@ -1558,6 +1796,19 @@ mod tests {
         );
         assert!(
             project_from_remote("git@github.com:acme/web.git", "https://gitlab.example.com")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn matches_ssh_alias_of_configured_host() {
+        assert_eq!(
+            project_from_remote("git@git.corp.one:ops/wg.git", "https://gitlab.corp.one")
+                .as_deref(),
+            Some("ops/wg")
+        );
+        assert!(
+            project_from_remote("https://git.corp.one/ops/wg.git", "https://gitlab.corp.one")
                 .is_none()
         );
     }
