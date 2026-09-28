@@ -1,0 +1,41 @@
+{
+  "data": {
+    "issue": {
+      "id": "2cbb1ac2-4e72-548b-8928-7bb37c6bfa16",
+      "identifier": "ENG-104",
+      "title": "Connect databases to the proxy",
+      "team": {
+        "id": "0b7f4d1f-9723-5ecc-9629-0692277f1e8b"
+      },
+      "project": {
+        "id": "a400e5d7-0409-5a81-9050-3991208ceec1"
+      },
+      "labels": {
+        "nodes": [
+          {
+            "id": "74521d8a-fa9b-5e9c-84ce-b0e18a3b60b5"
+          },
+          {
+            "id": "ca7f2232-39ba-5d61-bcf5-0f2e8ca02746"
+          },
+          {
+            "id": "02978f8a-121c-5f8a-ba96-d729d7ba43c9"
+          }
+        ]
+      },
+      "children": {
+        "nodes": [
+          {
+            "title": "Inventory the database hosts"
+          },
+          {
+            "title": "Record TLS readiness per instance"
+          },
+          {
+            "title": "Group instances into batches"
+          }
+        ]
+      }
+    }
+  }
+}

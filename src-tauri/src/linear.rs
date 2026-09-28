@@ -3,9 +3,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+
+use crate::session_store::SessionStore;
 
 const LINEAR_API: &str = "https://api.linear.app/graphql";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -142,6 +144,39 @@ pub struct LinearState {
 pub struct LinearSprint {
     pub cycle: Option<LinearCycle>,
     pub issues: Vec<LinearSprintIssue>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanParent {
+    pub id: String,
+    pub identifier: String,
+    pub title: String,
+    pub team_id: String,
+    pub project_id: Option<String>,
+    pub label_ids: Vec<String>,
+    pub child_titles: Vec<String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanItemInput {
+    #[serde(default)]
+    pub parent_identifier: String,
+    pub title: String,
+    pub description: String,
+    pub estimate: i64,
+    pub due_date: String,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanCreateResult {
+    pub index: usize,
+    pub identifier: String,
+    pub url: String,
+    pub skipped: bool,
+    pub error: Option<String>,
 }
 
 #[tauri::command(async)]
@@ -363,6 +398,258 @@ query SprintIssues($cycleId: ID!, $first: Int!) {
   }
 }
 "#;
+
+const PLAN_PARENT_QUERY: &str = r#"
+query PlanParent($id: String!) {
+  issue(id: $id) {
+    id identifier title
+    team { id }
+    project { id }
+    labels { nodes { id } }
+    children { nodes { title } }
+  }
+}
+"#;
+const PLAN_VIEWER_QUERY: &str = "query PlanViewer { viewer { id } }";
+const PLAN_CREATE_MUTATION: &str = r#"
+mutation PlanCreate($input: IssueCreateInput!) {
+  issueCreate(input: $input) { success issue { id identifier url } }
+}
+"#;
+const PLAN_MAX_ITEMS: usize = 60;
+
+/// Parent issues a plan refers to; unknown keys are left out.
+#[tauri::command]
+pub async fn linear_plan_parents(
+    app: AppHandle,
+    identifiers: Vec<String>,
+) -> Result<Vec<PlanParent>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        let mut out = Vec::new();
+        for identifier in identifiers.iter().take(PLAN_MAX_ITEMS) {
+            let identifier = identifier.trim();
+            if !valid_linear_id(identifier) {
+                continue;
+            }
+            let data = graphql_with_token(&token, PLAN_PARENT_QUERY, json!({ "id": identifier }));
+            if let Some(parent) = data.ok().as_ref().and_then(parse_plan_parent) {
+                out.push(parent);
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Creates planned issues one by one; planned hours stay local.
+#[tauri::command]
+pub async fn linear_create_plan(
+    app: AppHandle,
+    team_id: String,
+    cycle_id: String,
+    state_id: String,
+    items: Vec<PlanItemInput>,
+) -> Result<Vec<PlanCreateResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        for id in [&team_id, &cycle_id, &state_id] {
+            if !valid_linear_id(id.trim()) {
+                return Err("Missing Linear team, cycle or state".into());
+            }
+        }
+        if items.is_empty() || items.len() > PLAN_MAX_ITEMS {
+            return Err("A plan needs 1 to 60 items".into());
+        }
+        let viewer = graphql_with_token(&token, PLAN_VIEWER_QUERY, json!({}))?;
+        let assignee = string_field(viewer.get("viewer").unwrap_or(&Value::Null), "id")
+            .filter(|id| !id.is_empty())
+            .ok_or("Linear did not return the current user")?;
+        let mut parents: HashMap<String, Option<PlanParent>> = HashMap::new();
+        let mut results = Vec::with_capacity(items.len());
+        for (index, item) in items.iter().enumerate() {
+            let key = item.parent_identifier.trim().to_string();
+            let parent = if key.is_empty() {
+                None
+            } else {
+                let entry = parents.entry(key.clone()).or_insert_with(|| {
+                    graphql_with_token(&token, PLAN_PARENT_QUERY, json!({ "id": key }))
+                        .ok()
+                        .as_ref()
+                        .and_then(parse_plan_parent)
+                });
+                match entry {
+                    Some(parent) => Some(parent.clone()),
+                    None => {
+                        results.push(plan_failure(index, format!("Parent {key} not found")));
+                        continue;
+                    }
+                }
+            };
+            let outcome = match plan_issue_input(
+                item,
+                parent.as_ref(),
+                &team_id,
+                &cycle_id,
+                &state_id,
+                &assignee,
+            ) {
+                Err(error) => plan_failure(index, error),
+                Ok(None) => PlanCreateResult {
+                    index,
+                    identifier: String::new(),
+                    url: String::new(),
+                    skipped: true,
+                    error: None,
+                },
+                Ok(Some(input)) => {
+                    match graphql_with_token(
+                        &token,
+                        PLAN_CREATE_MUTATION,
+                        json!({ "input": input }),
+                    )
+                    .and_then(|data| parse_plan_create(&data))
+                    {
+                        Err(error) => plan_failure(index, error),
+                        Ok((id, identifier, url)) => {
+                            record_planned(&app, &id, &identifier, item.estimate);
+                            if let Some(Some(parent)) = parents.get_mut(&key) {
+                                parent.child_titles.push(item.title.trim().to_string());
+                            }
+                            PlanCreateResult {
+                                index,
+                                identifier,
+                                url,
+                                skipped: false,
+                                error: None,
+                            }
+                        }
+                    }
+                }
+            };
+            results.push(outcome);
+        }
+        Ok(results)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn plan_failure(index: usize, error: String) -> PlanCreateResult {
+    PlanCreateResult {
+        index,
+        identifier: String::new(),
+        url: String::new(),
+        skipped: false,
+        error: Some(error),
+    }
+}
+
+fn record_planned(app: &AppHandle, id: &str, identifier: &str, hours: i64) {
+    let store = app.state::<SessionStore>();
+    let Ok(conn) = store.lock_conn() else {
+        return;
+    };
+    let _ = crate::planning::set_planned(&conn, id, identifier, Some(hours as f64));
+}
+
+fn valid_due_date(day: &str) -> bool {
+    let bytes = day.as_bytes();
+    bytes.len() == 10
+        && bytes.iter().enumerate().all(|(i, b)| {
+            if i == 4 || i == 7 {
+                *b == b'-'
+            } else {
+                b.is_ascii_digit()
+            }
+        })
+}
+
+/// `Ok(None)` means the parent already has a subtask with this title.
+fn plan_issue_input(
+    item: &PlanItemInput,
+    parent: Option<&PlanParent>,
+    team_id: &str,
+    cycle_id: &str,
+    state_id: &str,
+    assignee: &str,
+) -> Result<Option<Value>, String> {
+    let title = item.title.trim();
+    let description = item.description.trim();
+    if title.is_empty() || description.is_empty() {
+        return Err("Title and description are required".into());
+    }
+    // Linear clamps estimates above 7 silently.
+    if !(1..=7).contains(&item.estimate) {
+        return Err("Hours must be 1 to 7".into());
+    }
+    if !valid_due_date(item.due_date.trim()) {
+        return Err("Due date must be YYYY-MM-DD".into());
+    }
+    if parent.is_some_and(|parent| parent.child_titles.iter().any(|t| t == title)) {
+        return Ok(None);
+    }
+    let mut input = json!({
+        "teamId": team_id.trim(),
+        "cycleId": cycle_id.trim(),
+        "stateId": state_id.trim(),
+        "assigneeId": assignee,
+        "title": title,
+        "description": description,
+        "estimate": item.estimate,
+        "dueDate": item.due_date.trim(),
+    });
+    if let Some(parent) = parent {
+        input["parentId"] = json!(parent.id);
+        if let Some(project) = &parent.project_id {
+            input["projectId"] = json!(project);
+        }
+        if !parent.label_ids.is_empty() {
+            input["labelIds"] = json!(parent.label_ids);
+        }
+    }
+    Ok(Some(input))
+}
+
+fn parse_plan_parent(data: &Value) -> Option<PlanParent> {
+    let node = data.get("issue")?;
+    let ids = |pointer: &str, key: &str| -> Vec<String> {
+        node.pointer(pointer)
+            .and_then(Value::as_array)
+            .map(|nodes| nodes.iter().filter_map(|n| string_field(n, key)).collect())
+            .unwrap_or_default()
+    };
+    Some(PlanParent {
+        id: string_field(node, "id").filter(|id| !id.is_empty())?,
+        identifier: string_field(node, "identifier").unwrap_or_default(),
+        title: string_field(node, "title").unwrap_or_default(),
+        team_id: node
+            .get("team")
+            .and_then(|team| string_field(team, "id"))
+            .unwrap_or_default(),
+        project_id: node
+            .get("project")
+            .and_then(|project| string_field(project, "id"))
+            .filter(|id| !id.is_empty()),
+        label_ids: ids("/labels/nodes", "id"),
+        child_titles: ids("/children/nodes", "title"),
+    })
+}
+
+fn parse_plan_create(data: &Value) -> Result<(String, String, String), String> {
+    let created = data
+        .get("issueCreate")
+        .filter(|created| created.get("success").and_then(Value::as_bool) == Some(true))
+        .and_then(|created| created.get("issue"))
+        .ok_or_else(|| "Linear did not create the issue".to_string())?;
+    let field = |key| string_field(created, key).unwrap_or_default();
+    let id = field("id");
+    if id.is_empty() {
+        return Err("Linear did not return the new issue".into());
+    }
+    Ok((id, field("identifier"), field("url")))
+}
 
 const TEAM_STATES_QUERY: &str = r#"
 query TeamStates($teamId: String!) {
@@ -1040,6 +1327,75 @@ mod tests {
     const SPRINT_ISSUES: &str = include_str!("testdata/linear_sprint_issues.json");
     const SPRINT_ACTIVE: &str = include_str!("testdata/linear_sprint_active_cycle.json");
     const TEAM_STATES: &str = include_str!("testdata/linear_team_states.json");
+    const PLAN_PARENT: &str = include_str!("testdata/linear_plan_parent.json");
+
+    fn plan_item(title: &str, estimate: i64) -> PlanItemInput {
+        PlanItemInput {
+            parent_identifier: "ENG-104".into(),
+            title: title.into(),
+            description: "Result of the step.".into(),
+            estimate,
+            due_date: "2026-10-05".into(),
+        }
+    }
+
+    #[test]
+    fn plan_parent_parses_real_payload() {
+        let parent = parse_plan_parent(&parse_graphql_data(PLAN_PARENT).unwrap()).unwrap();
+        assert_eq!(parent.identifier, "ENG-104");
+        assert!(parent.project_id.is_some());
+        assert!(!parent.label_ids.is_empty());
+        assert_eq!(parent.child_titles.len(), 3);
+    }
+
+    #[test]
+    fn plan_input_inherits_parent_and_skips_duplicates() {
+        let parent = parse_plan_parent(&parse_graphql_data(PLAN_PARENT).unwrap()).unwrap();
+        let input = plan_issue_input(
+            &plan_item("New step", 3),
+            Some(&parent),
+            "t",
+            "c",
+            "s",
+            "me",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(input["parentId"], json!(parent.id));
+        assert_eq!(input["projectId"], json!(parent.project_id));
+        assert_eq!(input["labelIds"], json!(parent.label_ids));
+        assert_eq!(input["estimate"], json!(3));
+        assert_eq!(input["cycleId"], json!("c"));
+        assert_eq!(input["assigneeId"], json!("me"));
+        assert!(input.get("description").is_some());
+
+        let dup = plan_item("Group instances into batches", 2);
+        assert_eq!(
+            plan_issue_input(&dup, Some(&parent), "t", "c", "s", "me"),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn plan_input_rejects_what_linear_would_clamp() {
+        for bad in [0, 8] {
+            assert!(plan_issue_input(&plan_item("x", bad), None, "t", "c", "s", "me").is_err());
+        }
+        let mut item = plan_item("x", 2);
+        item.due_date = "5.10.2026".into();
+        assert!(plan_issue_input(&item, None, "t", "c", "s", "me").is_err());
+        item.due_date = "2026-10-05".into();
+        item.description = " ".into();
+        assert!(plan_issue_input(&item, None, "t", "c", "s", "me").is_err());
+    }
+
+    #[test]
+    fn plan_create_reads_issue_or_fails() {
+        let ok = json!({ "issueCreate": { "success": true, "issue": {
+            "id": "u1", "identifier": "ENG-9", "url": "https://linear.app/acme/issue/ENG-9" } } });
+        assert_eq!(parse_plan_create(&ok).unwrap().1, "ENG-9");
+        assert!(parse_plan_create(&json!({ "issueCreate": { "success": false } })).is_err());
+    }
 
     #[test]
     fn team_states_come_in_board_order() {

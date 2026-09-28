@@ -35,6 +35,7 @@ import {
   type LinearState,
 } from "../model/sprint";
 import { IssueKey, SprintCalendar, StatePill } from "./SprintCalendar";
+import { PlanWeekPanel } from "./PlanWeekPanel";
 import { TimePanel } from "./TimePanel";
 
 type Props = {
@@ -151,6 +152,7 @@ export function CalendarView({
   );
   const [spentByDay, setSpentByDay] = useState<Record<string, number>>({});
   const [hoursToken, setHoursToken] = useState(0);
+  const [planning, setPlanning] = useState(false);
   const plan = useMemo(() => (sprint ? buildSprintPlan(sprint) : null), [sprint]);
 
   useEffect(() => {
@@ -267,6 +269,21 @@ export function CalendarView({
           />
           <span className="min-w-0 truncate text-content">Calendar</span>
         </div>
+        {connected && sprint?.cycle ? (
+          <button
+            type="button"
+            aria-pressed={planning}
+            onClick={() => setPlanning((open) => !open)}
+            className={`mr-2 inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium ${
+              planning
+                ? "bg-selection text-content"
+                : "bg-content/8 text-content hover:bg-content/12"
+            }`}
+          >
+            <CalendarDays className="size-3.5" strokeWidth={1.75} />
+            Plan week
+          </button>
+        ) : null}
         {IS_MAC ? null : <WindowControls />}
       </div>
 
@@ -287,7 +304,21 @@ export function CalendarView({
               summary={summary}
             />
           </div>
-          {selected && item ? (
+          {planning && sprint?.cycle && plan && teamId ? (
+            <PlanWeekPanel
+              key={sprint.cycle.id}
+              cycle={sprint.cycle}
+              weekdays={plan.days.map((day) => day.date)}
+              teamId={teamId}
+              states={states}
+              plannedByDay={summary?.plannedByDay ?? {}}
+              onClose={() => setPlanning(false)}
+              onCreated={() => {
+                setReloadToken((token) => token + 1);
+                setHoursToken((token) => token + 1);
+              }}
+            />
+          ) : selected && item ? (
             <div className="flex min-h-0 w-[min(520px,45%)] shrink-0 flex-col">
               <StatusControls
                 issue={selected}

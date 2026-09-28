@@ -360,6 +360,8 @@ pub fn run() {
             linear::linear_sprint,
             linear::linear_team_states,
             linear::linear_issue_set_state,
+            linear::linear_plan_parents,
+            linear::linear_create_plan,
             planning::planning_hours,
             planning::planning_set_planned,
             planning::planning_log_time,
