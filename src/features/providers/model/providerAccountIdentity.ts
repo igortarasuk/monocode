@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import type {
-  ProviderAccount,
-  ProviderAccountProvider,
+import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
+  type ProviderAccount,
+  type ProviderAccountProvider,
 } from "./providerAccounts";
 
 /** Identity the provider CLI cached on disk after sign-in. */
@@ -46,6 +47,33 @@ export function identityOrganizationTag(
 
 export function identityKey(account: ProviderAccount): string {
   return `${account.provider}:${account.id}`;
+}
+
+function sameSignIn(
+  left: ProviderAccountIdentity | null | undefined,
+  right: ProviderAccountIdentity | null | undefined,
+): boolean {
+  const email = (identity: typeof left) => identity?.email?.trim().toLowerCase();
+  const org = (identity: typeof left) => identity?.organization?.trim() ?? "";
+  return Boolean(email(left)) && email(left) === email(right) && org(left) === org(right);
+}
+
+/** Drop the unselected default when another profile is the same sign-in. */
+export function withoutDuplicateDefault(
+  accounts: ProviderAccount[],
+  identities: Record<string, ProviderAccountIdentity | null>,
+  selectedId: string,
+): ProviderAccount[] {
+  const fallback = accounts.find(
+    (account) => account.id === DEFAULT_PROVIDER_ACCOUNT_ID,
+  );
+  if (!fallback || fallback.id === selectedId) return accounts;
+  const identity = identities[identityKey(fallback)];
+  const duplicated = accounts.some(
+    (account) =>
+      account !== fallback && sameSignIn(identities[identityKey(account)], identity),
+  );
+  return duplicated ? accounts.filter((account) => account !== fallback) : accounts;
 }
 
 /**

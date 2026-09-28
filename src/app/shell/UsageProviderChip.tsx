@@ -23,7 +23,7 @@ import {
   resolveTabGroupMascot,
 } from "../../features/workspace/model/tabGroups";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
-import { ArrowLeft, Check, ChevronRight, Plus, RefreshCw } from "../../shared/ui/icons";
+import { ArrowLeft, ChevronRight, Plus, RefreshCw } from "../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../shared/ui/Popover";
 import {
   ProviderSignInPanel,
@@ -50,6 +50,7 @@ import {
   identityOrganizationTag,
   identitySubtitle,
   useProviderAccountIdentities,
+  withoutDuplicateDefault,
   type ProviderAccountIdentity,
 } from "../../features/providers/model/providerAccountIdentity";
 
@@ -515,7 +516,7 @@ function ProviderAccountPicker({
         Each conversation stays pinned to the account that started it.
       </p>
       <div className="mt-2 flex flex-col gap-1" role="listbox">
-        {accounts.map((account) => {
+        {withoutDuplicateDefault(accounts, identities, accountId).map((account) => {
           const selected = account.id === accountId;
           const identity = identities[identityKey(account)];
           const orgTag = identityOrganizationTag(identity);
@@ -553,6 +554,7 @@ function ProviderAccountPicker({
                       {orgTag}
                     </span>
                   ) : null}
+                  {selected ? <ActiveAccountTag /> : null}
                 </span>
                 <span className="mt-1 flex min-w-0 items-center gap-3 text-[10px]">
                   <span
@@ -581,13 +583,6 @@ function ProviderAccountPicker({
                   ) : null}
                 </span>
               </span>
-              {selected ? (
-                <Check
-                  className="size-3.5 shrink-0 text-accent"
-                  strokeWidth={1.9}
-                  aria-hidden
-                />
-              ) : null}
             </button>
           );
         })}
@@ -612,6 +607,18 @@ function ProviderAccountPicker({
         </button>
       ) : null}
     </div>
+  );
+}
+
+function ActiveAccountTag() {
+  return (
+    <span className="ml-auto inline-flex shrink-0 items-center gap-1 self-center rounded-full bg-emerald-500/15 px-1.5 text-[9px] font-medium leading-4 text-emerald-500">
+      <span
+        className="size-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_1px] shadow-emerald-500/60"
+        aria-hidden
+      />
+      active
+    </span>
   );
 }
 

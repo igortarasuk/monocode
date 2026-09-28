@@ -173,6 +173,11 @@ describe("UsageProviderChip", () => {
     await act(async () => button("Switch Codex account").click());
     expect(document.body.textContent).toContain("Codex accounts");
     expect(document.body.textContent).toContain("Default account");
+    const active = document.querySelector('[role="option"][aria-selected="true"]');
+    expect(active?.textContent).toContain("active");
+    expect(
+      document.querySelector('[role="option"][aria-selected="false"]')?.textContent,
+    ).not.toContain("active");
     await act(async () => button("Work").click());
 
     expect(onSelectAccount).toHaveBeenCalledWith("account-work");
