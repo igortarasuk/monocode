@@ -558,6 +558,7 @@ import type { InboxSessionPortal } from "../features/inbox/ui/InboxDiscussionPan
 import { inboxAskKey, inboxAskPrompt } from "../features/inbox/model/inboxAsk";
 import { NotesView } from "../features/notes/ui";
 import { AutomationsView } from "../features/automations/ui/AutomationsView";
+import { ServicesStatus } from "./shell/ServicesStatus";
 import { AssistantsView } from "../features/assistants/ui/AssistantsView";
 import {
   OPEN_ASSISTANTS_EVENT,
@@ -10997,6 +10998,7 @@ export default function App({
               calendarViewOpen ||
               settingsOpen ? null : (
                 <UsageFooter
+                  extra={<ServicesStatus />}
                   providers={usageProviders}
                   session={usageSession}
                   project={active?.cwd ?? projectCwd}

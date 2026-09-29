@@ -201,6 +201,17 @@ export function selectedProviderAccountId(
     : DEFAULT_PROVIDER_ACCOUNT_ID;
 }
 
+/** True once an account was picked for this project (not inherited). */
+export function hasProjectAccountChoice(
+  provider: ProviderAccountProvider,
+  project: string | undefined,
+): boolean {
+  if (!project?.trim()) return false;
+  const selections = readRecord<StoredSelections>(SELECTIONS_KEY);
+  const id = selections[selectionKey(project)]?.[provider];
+  return providerAccounts(provider).some((account) => account.id === id);
+}
+
 export function selectProviderAccount(
   provider: ProviderAccountProvider,
   project: string | undefined,

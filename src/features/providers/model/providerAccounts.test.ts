@@ -11,6 +11,7 @@ import {
   saveProviderAccount,
   selectedProviderAccountId,
   selectProviderAccount,
+  hasProjectAccountChoice,
 } from "./providerAccounts";
 
 beforeEach(() => {
@@ -199,5 +200,16 @@ describe("provider accounts", () => {
     removeProviderAccount("claude", "account-work");
 
     expect(providerAccounts("claude")[0]?.label).toBe("Primary");
+  });
+
+  it("knows whether a project picked its account explicitly", () => {
+    const work = newProviderAccount("claude", "Work");
+    saveProviderAccount(work);
+    expect(hasProjectAccountChoice("claude", "/home/me/app")).toBe(false);
+    selectProviderAccount("claude", undefined, work.id);
+    expect(hasProjectAccountChoice("claude", "/home/me/app")).toBe(false);
+    selectProviderAccount("claude", "/home/me/app", DEFAULT_PROVIDER_ACCOUNT_ID);
+    expect(hasProjectAccountChoice("claude", "/home/me/app")).toBe(true);
+    expect(hasProjectAccountChoice("claude", undefined)).toBe(false);
   });
 });

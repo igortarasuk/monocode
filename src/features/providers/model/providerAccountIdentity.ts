@@ -58,6 +58,16 @@ function sameSignIn(
   return Boolean(email(left)) && email(left) === email(right) && org(left) === org(right);
 }
 
+/** The default profile shows its sign-in email once known. */
+export function accountDisplayName(
+  account: ProviderAccount,
+  identity: ProviderAccountIdentity | null | undefined,
+): string {
+  return account.isDefault
+    ? identity?.email?.trim() || account.label
+    : account.label;
+}
+
 /** Drop the unselected default when another profile is the same sign-in. */
 export function withoutDuplicateDefault(
   accounts: ProviderAccount[],

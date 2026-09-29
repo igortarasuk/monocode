@@ -38,6 +38,7 @@ mod reminders;
 mod remote;
 mod remote_ssh;
 mod search;
+mod services;
 mod session_store;
 mod skills;
 pub mod ssh_askpass;
@@ -262,6 +263,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             teleport::teleport_status,
+            services::services_status,
             teleport::teleport_nodes,
             remote::remote_machines,
             remote::remote_connect,

@@ -1,5 +1,11 @@
 import { RefreshCw, Terminal } from "../../shared/ui/icons";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { Popover, type PopoverDismissReason } from "../../shared/ui/Popover";
 import { consumeCodexRateLimitResetCredit } from "../../features/providers/model/rateLimitsFetch";
@@ -41,6 +47,7 @@ import {
   providerAccounts,
   saveProviderAccount,
   selectProviderAccount,
+  hasProjectAccountChoice,
   selectedProviderAccountId,
   subscribeProviderAccounts,
   type ProviderAccountProvider,
@@ -68,6 +75,7 @@ export function UsageFooter({
   projectTerminalActive = false,
   onSelectAccount,
   onManageAccounts,
+  extra,
 }: {
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
@@ -83,6 +91,8 @@ export function UsageFooter({
     accountId: string,
   ) => void;
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
+  /** Extra chips after the pipeline status, e.g. local services. */
+  extra?: ReactNode;
 }) {
   const wantClaude = providers.includes("claude");
   const wantCodex = providers.includes("codex");
@@ -101,6 +111,15 @@ export function UsageFooter({
       : selectedProviderAccountId("codex", project);
   const claudeAccounts = providerAccounts("claude");
   const codexAccounts = providerAccounts("codex");
+  // With several profiles, a project must name its account explicitly.
+  const claudeNeedsChoice =
+    !(session?.harness === "claude" && session.providerAccountId) &&
+    claudeAccounts.length > 1 &&
+    !hasProjectAccountChoice("claude", project);
+  const codexNeedsChoice =
+    !(session?.harness === "codex" && session.providerAccountId) &&
+    codexAccounts.length > 1 &&
+    !hasProjectAccountChoice("codex", project);
   const claudeAccountAvailable = providerAccountExists(
     "claude",
     claudeAccountId,
@@ -323,6 +342,7 @@ export function UsageFooter({
               now={now}
               accounts={claudeAccounts}
               accountId={claudeAccountId}
+              needsAccountChoice={claudeNeedsChoice}
               onSelectAccount={(accountId) =>
                 selectAccount("claude", accountId)
               }
@@ -340,6 +360,7 @@ export function UsageFooter({
               project={project}
               accounts={codexAccounts}
               accountId={codexAccountId}
+              needsAccountChoice={codexNeedsChoice}
               onSelectAccount={(accountId) => selectAccount("codex", accountId)}
               onAddAccount={(label) => addAccount("codex", label)}
               onManageAccounts={
@@ -371,6 +392,7 @@ export function UsageFooter({
         <SessionChip key={session.id ?? session.harness} session={session} />
       ) : null}
       <PipelineChip project={project} />
+      {extra}
       {showTerminals || showTerminalButton ? (
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {showTerminals ? (
