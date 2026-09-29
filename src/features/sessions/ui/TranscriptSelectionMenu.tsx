@@ -64,7 +64,9 @@ export function TranscriptSelectionMenu({
         {onAddToNotes ? (
           <SelectionAction
             label="Add to notes"
-            onSelect={() => onAddToNotes(selection.text)}
+            onSelect={() =>
+              onAddToNotes(selection.markdown ?? selection.text)
+            }
             onDismiss={onDismiss}
           >
             <FilePlusCorner

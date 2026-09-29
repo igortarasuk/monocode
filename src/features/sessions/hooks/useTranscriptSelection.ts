@@ -4,6 +4,7 @@ import {
   validateTranscriptSelection,
   type TranscriptSelection,
 } from "../model/transcriptSelection";
+import { selectionMarkdown } from "../model/selectionMarkdown";
 
 function responseIdForNode(
   node: Node | null,
@@ -65,8 +66,14 @@ export function useTranscriptSelection(
         anchorResponseId: responseIdForNode(nativeSelection.anchorNode, root),
         focusResponseId: responseIdForNode(nativeSelection.focusNode, root),
       });
-      const rect = text ? firstRangeRect(nativeSelection.getRangeAt(0)) : null;
-      setSelection(text && rect ? { text, rect } : null);
+      const range = nativeSelection.getRangeAt(0);
+      const rect = text ? firstRangeRect(range) : null;
+      const markdown = text && rect ? selectionMarkdown(range) : "";
+      setSelection(
+        text && rect
+          ? { text, rect, ...(markdown ? { markdown } : {}) }
+          : null,
+      );
     };
     const scheduleReport = () => {
       cancelFrame();
