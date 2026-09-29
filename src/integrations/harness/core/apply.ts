@@ -458,14 +458,14 @@ export function appendSteerUser(
   };
 }
 
-export function stopStreaming(session: Session): Session {
+export function stopStreaming(session: Session, endedAt = Date.now()): Session {
   const { backgroundTasks: _cleared, ...settled } =
     settlePendingApprovals(session);
   return {
     ...settled,
     busy: false,
     pendingQuestion: undefined,
-    blocks: stampTurnDuration(settled.blocks.map(stopBlockProgress)),
+    blocks: stampTurnDuration(settled.blocks.map(stopBlockProgress), endedAt),
   };
 }
 
@@ -634,7 +634,7 @@ function stopBlockProgress(block: Block): Block {
   };
 }
 
-function stampTurnDuration(blocks: Block[]): Block[] {
+function stampTurnDuration(blocks: Block[], endedAt: number): Block[] {
   let lastUser = -1;
   for (let i = blocks.length - 1; i >= 0; i--) {
     if (blocks[i].role === "user") {
@@ -648,7 +648,7 @@ function stampTurnDuration(blocks: Block[]): Block[] {
   const next = blocks.slice();
   next[lastUser] = {
     ...user,
-    durationMs: Math.max(0, Date.now() - user.startedAt),
+    durationMs: Math.max(0, endedAt - user.startedAt),
   };
   return next;
 }

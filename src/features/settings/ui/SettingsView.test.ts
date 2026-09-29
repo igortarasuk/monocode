@@ -399,7 +399,7 @@ describe("settings pages", () => {
     )!;
     expect(retry).not.toBeNull();
     await act(async () => retry.click());
-    expect(invoke).toHaveBeenCalledWith("harness_resolve_codex");
+    expect(invoke).toHaveBeenCalledWith("harness_resolve_codex", undefined);
   });
 
   it("reopens, scrolls to, focuses and highlights the same project on a repeated notification settings request", async () => {

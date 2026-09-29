@@ -3,6 +3,10 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn(async () => {}),
+}));
+
 const { invalidateWatchedFiles } = vi.hoisted(() => ({
   invalidateWatchedFiles: vi.fn(),
 }));
@@ -35,10 +39,6 @@ vi.mock("../../../integrations/harness", () => ({
   generatePrContent: vi.fn(async () => null),
 }));
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openUrl: vi.fn(async () => {}),
-}));
-
 vi.mock("../../files/model/fileWatch", () => ({
   invalidateWatchedFiles,
   nudgeWatchedFiles: vi.fn(),
@@ -53,10 +53,12 @@ import {
   gitDiffIndex,
   gitPrCreate,
   gitPull,
+  gitPush,
   gitRangeContext,
   gitReviewProvider,
 } from "../../../platform/tauri/fs";
 import { generatePrContent } from "../../../integrations/harness";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { GitDiffIndex } from "../../../platform/tauri/fs";
 
 function index(overrides: Partial<GitDiffIndex> = {}): GitDiffIndex {
@@ -106,11 +108,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function renderPanel() {
+async function renderPanel(cwd = "/repo") {
   act(() =>
     root.render(
       createElement(GitChangesPanel, {
-        cwd: "/repo",
+        cwd,
         enabled: true,
         onOpenFile: vi.fn(),
         onOpenAllChanges: vi.fn(),
@@ -216,5 +218,45 @@ describe("GitChangesPanel GitLab merge request", () => {
       "main",
       "feature/pull",
     );
+  });
+});
+
+describe("GitChangesPanel remote pull request", () => {
+  it("creates it from the host Git range without calling a local harness", async () => {
+    const cwd = "remote://machine/home/user/repo";
+    vi.mocked(gitReviewProvider).mockResolvedValue("github");
+    vi.mocked(generatePrContent).mockClear();
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({ remote: "origin", upstream: "origin/feature/pull", ahead: 1, aheadOfDefault: 1 }),
+    );
+    vi.mocked(gitRangeContext).mockResolvedValue({
+      base: "main",
+      head: "feature/pull",
+      commitSummary: "abc123 Fix remote flow\ndef456 Add coverage",
+      diffSummary: "2 files changed, 4 insertions(+)\n",
+      diffPatch: "",
+    });
+    vi.mocked(gitPrCreate).mockResolvedValue("https://example.test/pull/42");
+    await renderPanel(cwd);
+
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((candidate) => candidate.textContent?.trim() === "Create PR");
+    expect(button?.disabled).toBe(false);
+    await act(async () => {
+      button!.click();
+      await Promise.resolve();
+    });
+
+    expect(gitPush).toHaveBeenCalledWith(cwd);
+    expect(gitRangeContext).toHaveBeenCalledWith(cwd);
+    expect(generatePrContent).not.toHaveBeenCalled();
+    expect(gitPrCreate).toHaveBeenCalledWith(
+      cwd,
+      "Fix remote flow",
+      expect.stringContaining("## Changes\n\n2 files changed"),
+      "main",
+      "feature/pull",
+    );
+    expect(openUrl).toHaveBeenCalledWith("https://example.test/pull/42");
   });
 });
