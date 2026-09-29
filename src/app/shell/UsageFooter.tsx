@@ -1,5 +1,11 @@
 import { RefreshCw, Terminal } from "../../shared/ui/icons";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { Popover, type PopoverDismissReason } from "../../shared/ui/Popover";
 import { consumeCodexRateLimitResetCredit } from "../../features/providers/model/rateLimitsFetch";
@@ -69,6 +75,7 @@ export function UsageFooter({
   projectTerminalActive = false,
   onSelectAccount,
   onManageAccounts,
+  extra,
 }: {
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
@@ -84,6 +91,8 @@ export function UsageFooter({
     accountId: string,
   ) => void;
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
+  /** Extra chips after the pipeline status, e.g. local services. */
+  extra?: ReactNode;
 }) {
   const wantClaude = providers.includes("claude");
   const wantCodex = providers.includes("codex");
@@ -383,6 +392,7 @@ export function UsageFooter({
         <SessionChip key={session.id ?? session.harness} session={session} />
       ) : null}
       <PipelineChip project={project} />
+      {extra}
       {showTerminals || showTerminalButton ? (
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {showTerminals ? (
