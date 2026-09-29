@@ -25,8 +25,13 @@ import {
   Settings,
   StickyNote,
   Zap,
+  Bot,
   CalendarDays,
 } from "../../shared/ui/icons";
+import {
+  openAssistantsView,
+  useAssistantsViewShown,
+} from "../../features/assistants/model/assistantsNav";
 import {
   memo,
   useEffect,
@@ -2259,6 +2264,7 @@ function SidebarProjectPicker({
     null,
   );
   const inboxTrigger = useRef<HTMLElement | null>(null);
+  const assistantsShown = useAssistantsViewShown();
   return (
     <div
       className="flex h-9 items-center gap-0.5 border-b border-stroke px-2"
@@ -2321,12 +2327,19 @@ function SidebarProjectPicker({
         {onOpenAutomations ? (
           <IconButton
             label="Automations"
-            active={automationsActive}
+            active={automationsActive && !assistantsShown}
             onClick={onOpenAutomations}
           >
             <Zap className="size-3.5" strokeWidth={1.75} />
           </IconButton>
         ) : null}
+        <IconButton
+          label="Assistants"
+          active={assistantsShown}
+          onClick={openAssistantsView}
+        >
+          <Bot className="size-3.5" strokeWidth={1.75} />
+        </IconButton>
         {onOpenCalendar ? (
           <IconButton
             label="Calendar"
@@ -2415,6 +2428,7 @@ function CompactProjectRail({
     null,
   );
   const inboxTrigger = useRef<HTMLElement | null>(null);
+  const assistantsShown = useAssistantsViewShown();
   const action = (active: boolean, open?: () => void) =>
     active && onLeaveActive ? onLeaveActive : open;
   const workspaceActive =
@@ -2518,8 +2532,17 @@ function CompactProjectRail({
         <CompactRailAction
           label="Automations"
           icon={Zap}
-          active={automationsActive}
-          onClick={action(automationsActive, onOpenAutomations)}
+          active={automationsActive && !assistantsShown}
+          onClick={action(
+            automationsActive && !assistantsShown,
+            onOpenAutomations,
+          )}
+        />
+        <CompactRailAction
+          label="Assistants"
+          icon={Bot}
+          active={assistantsShown}
+          onClick={action(assistantsShown, openAssistantsView)}
         />
         {onOpenCalendar ? (
           <CompactRailAction

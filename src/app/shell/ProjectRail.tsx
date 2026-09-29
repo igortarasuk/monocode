@@ -13,8 +13,13 @@ import {
   Search,
   Settings,
   Zap,
+  Bot,
   CalendarDays,
 } from "../../shared/ui/icons";
+import {
+  openAssistantsView,
+  useAssistantsViewShown,
+} from "../../features/assistants/model/assistantsNav";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
@@ -177,6 +182,7 @@ export function ProjectRail({
     onCommit: saveProjectRailWidth,
   });
   const [railOrder, setRailOrder] = useState(loadProjectRailOrder);
+  const assistantsShown = useAssistantsViewShown();
   const [pinnedPaths, setPinnedPaths] = useState(loadPinnedProjects);
   const [groupLabels, setGroupLabels] = useState(loadTabGroupLabels);
   const [groupColors, setGroupColors] = useState(loadTabGroupColors);
@@ -403,8 +409,15 @@ export function ProjectRail({
               label="Automations"
               icon={Zap}
               onClick={onOpenAutomations}
-              active={automationsActive}
+              active={automationsActive && !assistantsShown}
               ariaLabel="Automations"
+            />
+            <RailAction
+              label="Assistants"
+              icon={Bot}
+              onClick={openAssistantsView}
+              active={assistantsShown}
+              ariaLabel="Assistants"
             />
             {onOpenCalendar ? (
               <RailAction

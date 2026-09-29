@@ -1344,6 +1344,7 @@ describe("collapsed rail Inbox actions", () => {
       "Inbox",
       "Notes",
       "Automations",
+      "Assistants",
       "Settings",
     ]);
     const workspaceTabs = rail.querySelector<HTMLElement>(

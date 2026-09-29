@@ -147,7 +147,8 @@ function normalize(value: unknown): Assistant | null {
     runtimeMode: RUNTIME_MODES.includes(item.runtimeMode as RuntimeMode)
       ? (item.runtimeMode as RuntimeMode)
       : DEFAULT_RUNTIME_MODE,
-    instructions: typeof item.instructions === "string" ? item.instructions : "",
+    instructions:
+      typeof item.instructions === "string" ? item.instructions : "",
     ...(typeof item.skill === "string" && item.skill.trim()
       ? { skill: item.skill.trim().replace(/^\/+/, "") }
       : {}),
@@ -163,7 +164,9 @@ function normalize(value: unknown): Assistant | null {
 
 export function loadAssistants(): Assistant[] {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(STORAGE_KEY) ?? "null",
+    );
     const list =
       parsed && typeof parsed === "object" && "assistants" in parsed
         ? (parsed as { assistants: unknown }).assistants
@@ -222,7 +225,10 @@ export function upsertAssistant(
     id: existing?.id ?? crypto.randomUUID(),
     slug:
       existing?.slug ??
-      uniqueSlug(input.name, assistants.map((item) => item.slug)),
+      uniqueSlug(
+        input.name,
+        assistants.map((item) => item.slug),
+      ),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   });

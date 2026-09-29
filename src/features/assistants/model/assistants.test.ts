@@ -67,13 +67,23 @@ describe("assistants", () => {
         version: 1,
         assistants: [
           { id: "a", slug: "../x", name: "Bad" },
-          { id: "b", slug: "ok", name: "Ok", harness: "nope", noteTags: ["#Todo"] },
+          {
+            id: "b",
+            slug: "ok",
+            name: "Ok",
+            harness: "nope",
+            noteTags: ["#Todo"],
+          },
         ],
       }),
     );
     const [only, ...rest] = loadAssistants();
     expect(rest).toEqual([]);
-    expect(only).toMatchObject({ slug: "ok", harness: "claude", noteTags: ["todo"] });
+    expect(only).toMatchObject({
+      slug: "ok",
+      harness: "claude",
+      noteTags: ["todo"],
+    });
   });
 
   it("finds the assistant for absolute and ~ workspace paths", () => {
