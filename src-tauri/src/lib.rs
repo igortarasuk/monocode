@@ -38,6 +38,7 @@ mod search;
 mod session_store;
 mod skills;
 pub mod ssh_askpass;
+mod teleport;
 #[cfg(target_os = "windows")]
 mod tray;
 mod window;
@@ -257,6 +258,8 @@ pub fn run() {
             menu::dispatch(app, event.id().as_ref());
         })
         .invoke_handler(tauri::generate_handler![
+            teleport::teleport_status,
+            teleport::teleport_nodes,
             remote::remote_machines,
             remote::remote_connect,
             remote::remote_disconnect,

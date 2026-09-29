@@ -575,14 +575,19 @@ pub fn remote_ssh_begin(
     target: String,
     name: String,
     port: Option<u16>,
+    teleport: Option<crate::teleport::TeleportRoute>,
 ) -> Result<String, String> {
     let target = remote_ssh::validate_target(&target, port)?;
+    if let Some(route) = &teleport {
+        crate::teleport::validate_route(route)?;
+    }
     start_ssh_job(
         app,
         SshTarget {
             target,
             port,
             remote_port: 3774,
+            teleport,
         },
         name.trim().chars().take(100).collect(),
         None,
