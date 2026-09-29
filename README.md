@@ -35,6 +35,9 @@ MonoCode is a desktop app that runs the coding agents you already pay for (Claud
 - A Claude or Codex profile can point at an existing config directory instead of a fresh one.
 - The account picker hides the default profile when another profile is the same sign-in, and marks the active one with a green *active* tag.
 
+**Teleport**
+- With `tsh` installed and logged in, Settings → Connections → Add machine lists the nodes of your Teleport clusters. Pick a node and a login; the remote host is set up over OpenSSH through `tsh proxy ssh`, with the certificate and known hosts `tsh config` provides. An expired certificate shows the `tsh login` command to run.
+
 **Linux desktop**
 - Transparent window, resizing from the window edges on Wayland, a Nerd Font in the terminal for Powerlevel10k, and a sharper monospace font.
 - Pasting images and files from the clipboard, and a PDF viewer (upstream pull requests #479 and #383, merged early).
