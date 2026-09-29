@@ -45,6 +45,7 @@ import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
+import { LayaGateSection } from "../../laya/ui/LayaGateSection";
 import {
   AUTOMATION_WEEKDAYS,
   applyTriggers,
@@ -1364,6 +1365,11 @@ function AutomationEditor({
                 Skills, @file references, and built-in commands work here.
               </p>
             </section>
+
+            <LayaGateSection
+              gate={draft.gate}
+              onChange={(gate) => update("gate", gate)}
+            />
 
             <section>
               <SectionTitle>Session</SectionTitle>
