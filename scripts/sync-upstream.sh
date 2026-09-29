@@ -29,6 +29,15 @@ git config rerere.autoupdate true
 # Keep our README when upstream edits it (.gitattributes).
 git config merge.ours.driver true
 
+# Our only change to the Tauri config is the product name, so a conflict
+# there is resolved by taking upstream's file and renaming it again.
+BRAND_FILE=src-tauri/tauri.conf.json
+BRAND_NAME=Monochrome
+rebrand() {
+  sed -i -e "s/\"productName\": \"[^\"]*\"/\"productName\": \"$BRAND_NAME\"/" \
+    -e "s/\"title\": \"MonoCode\"/\"title\": \"$BRAND_NAME\"/" "$BRAND_FILE"
+}
+
 git fetch --quiet "$REMOTE"
 INCOMING="$(git rev-list --count "HEAD..$REMOTE/$REF")"
 if [ "$INCOMING" -eq 0 ]; then
@@ -39,9 +48,15 @@ echo "$INCOMING new commit(s) from $REMOTE/$REF:"
 git log --oneline --no-decorate "HEAD..$REMOTE/$REF" | head -40
 
 if ! git merge --no-edit --no-ff "$REMOTE/$REF"; then
+  if git diff --name-only --diff-filter=U | grep -qx "$BRAND_FILE"; then
+    echo "Taking upstream $BRAND_FILE and renaming it to $BRAND_NAME."
+    git checkout --theirs -- "$BRAND_FILE"
+    rebrand
+    git add "$BRAND_FILE"
+  fi
   UNMERGED="$(git diff --name-only --diff-filter=U)"
   if [ -e "$(git rev-parse --git-path MERGE_HEAD)" ] && [ -z "$UNMERGED" ]; then
-    echo "rerere resolved every conflict; committing the merge."
+    echo "All conflicts resolved automatically; committing the merge."
     git commit --no-edit
   else
     echo >&2
@@ -51,6 +66,11 @@ if ! git merge --no-edit --no-ff "$REMOTE/$REF"; then
     echo "Resolve by hand: git merge $REMOTE/$REF" >&2
     exit 2
   fi
+fi
+rebrand
+if ! git diff --quiet -- "$BRAND_FILE"; then
+  echo "Restoring $BRAND_NAME name in $BRAND_FILE."
+  git commit --quiet --amend --no-edit -- "$BRAND_FILE"
 fi
 echo "Merged $REMOTE/$REF into $BRANCH at $(git rev-parse --short HEAD)."
 
