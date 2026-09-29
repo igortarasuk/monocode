@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
@@ -591,9 +591,27 @@ function IconChooser({
   onChange: (icon: AssistantIcon) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement | null>(null);
   const Current = ASSISTANT_ICON[value];
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div ref={root} className="relative">
       <button
         type="button"
         aria-label="Icon"
@@ -603,13 +621,19 @@ function IconChooser({
         <Current className="size-4" strokeWidth={1.75} />
       </button>
       {open ? (
-        <div className="absolute left-0 top-9 z-10 grid grid-cols-4 gap-1 rounded-md border border-content/12 bg-background-base p-1.5 shadow-lg">
+        <div
+          role="listbox"
+          aria-label="Icons"
+          className="absolute left-0 top-9 z-10 grid w-max grid-cols-[repeat(4,1.75rem)] gap-1 rounded-md border border-content/12 bg-background-base p-1.5 shadow-lg"
+        >
           {ASSISTANT_ICONS.map((icon) => {
             const Icon = ASSISTANT_ICON[icon];
             return (
               <button
                 key={icon}
                 type="button"
+                role="option"
+                aria-selected={icon === value}
                 aria-label={icon}
                 onClick={() => {
                   onChange(icon);

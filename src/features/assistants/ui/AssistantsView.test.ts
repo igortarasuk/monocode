@@ -98,3 +98,29 @@ describe("AssistantsContent", () => {
     );
   });
 });
+
+describe("icon chooser", () => {
+  it("lays icons out in a fixed grid and closes after a pick", async () => {
+    await render();
+    await act(async () => button("Translator").click());
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Icon"]',
+    )!;
+    await act(async () => trigger.click());
+    const list = container.querySelector('[role="listbox"]')!;
+    expect(list.className).toContain("grid-cols-[repeat(4,1.75rem)]");
+    expect(list.querySelectorAll('[role="option"]')).toHaveLength(8);
+    await act(async () =>
+      list.querySelector<HTMLButtonElement>('[aria-label="bot"]')!.click(),
+    );
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+
+    await act(async () => trigger.click());
+    await act(async () => {
+      document.body.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true }),
+      );
+    });
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+  });
+});
