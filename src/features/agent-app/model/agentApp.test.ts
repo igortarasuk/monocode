@@ -17,6 +17,34 @@ vi.mock("../../../integrations/harness/core/availability", () => ({
   isHarnessAvailable: (id: string) => id === "codex",
 }));
 
+const laya = vi.hoisted(() => ({
+  layaStatus: vi.fn(async () => ({ running: true, domains: ["ansible"] })),
+  layaClassify: vi.fn(async (domain: string) => ({
+    domain,
+    chunks: [
+      {
+        line: 4,
+        flagged: [
+          {
+            rule: "no-shell-wrapper",
+            p: 0.9,
+            nudge: "Use modules.",
+            example: { text: "- apt: {}", source: "user" },
+          },
+        ],
+      },
+    ],
+  })),
+  layaPredict: vi.fn(async () => ({ risky: { noul: 0.7 } })),
+  layaLearn: vi.fn(async () => ({ stored: 2 })),
+}));
+vi.mock("../../laya/model/laya", () => laya);
+const readTextFile = vi.hoisted(() => vi.fn(async () => "- shell: x | grep y"));
+vi.mock("../../../platform/tauri/fs", async (original) => ({
+  ...(await original<typeof import("../../../platform/tauri/fs")>()),
+  readTextFile,
+}));
+
 const note: Note = {
   id: "n1",
   slug: "plan",
@@ -738,5 +766,98 @@ describe("agent app commands", () => {
         host,
       ),
     ).rejects.toThrow("body is required");
+  });
+});
+
+describe("laya actions", () => {
+  it("classifies a file of the session and trims the result", async () => {
+    const { source, host } = fixture();
+    const result = await handleAgentApp(
+      source,
+      "r1",
+      "laya.classify",
+      { domain: "ansible", path: "roles/web/tasks/main.yml" },
+      host,
+    );
+    expect(readTextFile).toHaveBeenCalledWith(
+      "/tmp/project/roles/web/tasks/main.yml",
+    );
+    expect(laya.layaClassify).toHaveBeenCalledWith(
+      "ansible",
+      "- shell: x | grep y",
+    );
+    expect(result).toEqual({
+      domain: "ansible",
+      flagged: [
+        {
+          rule: "no-shell-wrapper",
+          p: 0.9,
+          line: 4,
+          nudge: "Use modules.",
+          example: "- apt: {}",
+        },
+      ],
+    });
+  });
+
+  it("rejects paths outside the session and bad names", async () => {
+    const { source, host } = fixture();
+    await expect(
+      handleAgentApp(
+        source,
+        "r2",
+        "laya.classify",
+        { domain: "ansible", path: "../secrets.yml" },
+        host,
+      ),
+    ).rejects.toThrow("inside the session folder");
+    await expect(
+      handleAgentApp(
+        source,
+        "r3",
+        "laya.classify",
+        { domain: "-h", text: "x" },
+        host,
+      ),
+    ).rejects.toThrow("domain");
+    await expect(
+      handleAgentApp(source, "r4", "laya.predict", { text: "x" }, host),
+    ).rejects.toThrow("either preset or questions");
+  });
+
+  it("predicts, learns and reports status", async () => {
+    const { source, host } = fixture();
+    const questions = { risky: { type: "noul", instructions: "Risky?" } };
+    expect(
+      await handleAgentApp(
+        source,
+        "r5",
+        "laya.predict",
+        { questions, text: "diff" },
+        host,
+      ),
+    ).toEqual({ answers: { risky: { noul: 0.7 } } });
+    expect(laya.layaPredict).toHaveBeenCalledWith({ questions }, "diff");
+    expect(
+      await handleAgentApp(
+        source,
+        "r6",
+        "laya.learn",
+        { domain: "ansible", bad: "a", good: "b", rules: ["no-shell-wrapper"] },
+        host,
+      ),
+    ).toEqual({ stored: 2 });
+    await expect(
+      handleAgentApp(
+        source,
+        "r7",
+        "laya.learn",
+        { domain: "ansible", bad: "a", good: "b", rules: [] },
+        host,
+      ),
+    ).rejects.toThrow("rules");
+    expect(
+      await handleAgentApp(source, "r8", "laya.status", {}, host),
+    ).toMatchObject({ running: true });
   });
 });
