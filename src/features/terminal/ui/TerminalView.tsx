@@ -1,4 +1,5 @@
 import { Terminal } from "@xterm/xterm";
+import { takeTerminalInput } from "../model/runInTerminal";
 import { useEffect, useRef } from "react";
 import {
   getPtyStatus,
@@ -246,6 +247,9 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
     const starting = spawnPty(id, cwd, term.cols, term.rows)
       .then(() => {
         if (!closed) spawned.current = true;
+        // A command opened with the terminal (`! cmd`, a Run button).
+        const input = takeTerminalInput(id);
+        if (input && !closed) void writePty(id, input).catch(() => undefined);
       })
       .catch((error) => {
         spawned.current = false;

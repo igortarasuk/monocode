@@ -1,4 +1,11 @@
 import { code } from "@streamdown/code";
+import { Play } from "../../../shared/ui/icons";
+import {
+  bangCommand,
+  isShellLanguage,
+  requestRunInTerminal,
+  shellCommandFromCode,
+} from "../../terminal/model/runInTerminal";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -282,6 +289,29 @@ function MarkdownCode({
       file && onOpenFile
         ? () => onOpenFile(file.path, file.navigation)
         : undefined;
+    const bang = bangCommand(text);
+    if (bang) {
+      return (
+        <span className="inline-flex max-w-full items-center gap-1 align-baseline">
+          <code
+            {...props}
+            dir="ltr"
+            className={`rounded-md bg-content/8 px-1.5 [overflow-wrap:anywhere] font-mono text-[0.8em] text-content ${className ?? ""}`}
+          >
+            {children}
+          </code>
+          <button
+            type="button"
+            title={`Run in terminal: ${bang}`}
+            aria-label="Run in terminal"
+            className="grid size-5 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content"
+            onClick={() => requestRunInTerminal(bang, cwd)}
+          >
+            <Play className="size-3" aria-hidden />
+          </button>
+        </span>
+      );
+    }
     return (
       <code
         {...props}
@@ -342,6 +372,9 @@ function MarkdownCode({
         <MarkdownCodePath path={fence.filePath} startLine={fence.startLine} />
       ) : null}
       <CodeCopyButton code={code} />
+      {!incomplete && isShellLanguage(fence.language) ? (
+        <CodeRunButton command={shellCommandFromCode(code)} />
+      ) : null}
       <CodeBlock
         className={className}
         code={code}
@@ -351,6 +384,23 @@ function MarkdownCode({
         startLine={fence.startLine}
       />
     </div>
+  );
+}
+
+/** Runs a shell block in a project terminal, so interactive prompts work. */
+function CodeRunButton({ command }: { command: string }) {
+  const { cwd } = useContext(FileOpenContext);
+  if (!command.trim()) return null;
+  return (
+    <button
+      type="button"
+      title="Run in terminal"
+      aria-label="Run in terminal"
+      className="markdown-code-copy markdown-code-run"
+      onClick={() => requestRunInTerminal(command, cwd)}
+    >
+      <Play aria-hidden />
+    </button>
   );
 }
 

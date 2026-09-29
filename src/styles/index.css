@@ -3093,3 +3093,8 @@ html.theme-light .btw-burst {
     var(--color-background-base)
   );
 }
+
+/* Run button for shell code blocks, left of the copy button. */
+.agent-markdown .markdown-code-run {
+  right: 36px;
+}

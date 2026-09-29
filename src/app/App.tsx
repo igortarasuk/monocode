@@ -559,6 +559,12 @@ import { inboxAskKey, inboxAskPrompt } from "../features/inbox/model/inboxAsk";
 import { NotesView } from "../features/notes/ui";
 import { AutomationsView } from "../features/automations/ui/AutomationsView";
 import { ServicesStatus } from "./shell/ServicesStatus";
+import {
+  RUN_IN_TERMINAL_EVENT,
+  bangCommand,
+  queueTerminalInput,
+  type RunInTerminalRequest,
+} from "../features/terminal/model/runInTerminal";
 import { AssistantsView } from "../features/assistants/ui/AssistantsView";
 import {
   OPEN_ASSISTANTS_EVENT,
@@ -2422,7 +2428,7 @@ export default function App({
   }, []);
 
   const openProjectTerminal = useCallback(
-    (cwd: string) => {
+    (cwd: string, command?: string) => {
       const workdir = cwd || projectCwdRef.current;
       const projectPath = projectCwdRef.current;
       if (!isLocalProject(projectPath)) return false;
@@ -2433,6 +2439,7 @@ export default function App({
           existing ? nextDockTerminalTitle(existing, workdir) : undefined,
           projectPath,
         );
+        if (command) queueTerminalInput(file.id, command);
         if (!existing) {
           return [
             ...prev,
@@ -6956,14 +6963,32 @@ export default function App({
   // queued-launch receiver uses submitSession to await the actual acceptance.
   const onSubmit = useCallback(
     (...args: Parameters<Submit>): boolean => {
+      // `! cmd` runs in a project terminal, like Claude Code's shell mode.
+      const command = bangCommand(args[1]);
+      if (command && !args[2]?.length) {
+        const session = sessionsRef.current.find((item) => item.id === args[0]);
+        const cwd = session ? sessionWorkCwd(session) : gitCwd;
+        if (isLocalProject(cwd) && openProjectTerminal(cwd, command)) return true;
+      }
       const result = submitSession(...args);
       if (typeof result === "boolean") return result;
       // Deferred errors have already been displayed by submitAfterProjectSync.
       void result.catch(() => undefined);
       return true;
     },
-    [submitSession],
+    [gitCwd, openProjectTerminal, submitSession],
   );
+
+  useEffect(() => {
+    const run = (event: Event) => {
+      const { command, cwd } = (event as CustomEvent<RunInTerminalRequest>)
+        .detail;
+      const workdir = cwd && isLocalProject(cwd) ? cwd : gitCwd;
+      openProjectTerminal(workdir, command);
+    };
+    window.addEventListener(RUN_IN_TERMINAL_EVENT, run);
+    return () => window.removeEventListener(RUN_IN_TERMINAL_EVENT, run);
+  }, [gitCwd, openProjectTerminal]);
 
   const automationSessionReservations = useRef(new Set<string>());
   const automationRecoveryRef = useRef<Promise<void> | null>(null);
