@@ -1,5 +1,6 @@
 import { code } from "@streamdown/code";
 import { Play } from "../../../shared/ui/icons";
+import { useFileReferenceExists } from "../../files/model/fileReferenceExists";
 import {
   bangCommand,
   isShellLanguage,
@@ -282,9 +283,13 @@ function MarkdownCode({
     const text = textContent(children);
     const fileName = inlineFileName(text);
     const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
-    const file = fileName
+    const reference = fileName
       ? resolveWorkspaceFileReference(text, cwd)
       : undefined;
+    // Only files that exist become links; names of rendered or remote files
+    // stay plain code.
+    const exists = useFileReferenceExists(reference?.path, cwd);
+    const file = exists ? reference : undefined;
     const open =
       file && onOpenFile
         ? () => onOpenFile(file.path, file.navigation)
@@ -338,7 +343,7 @@ function MarkdownCode({
             : undefined
         }
       >
-        {fileName ? (
+        {file && fileName ? (
           <span aria-hidden="true">
             <FileTypeIcon name={fileName} isDir={false} size={14} />
           </span>

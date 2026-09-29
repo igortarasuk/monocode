@@ -27,6 +27,7 @@ mod notes;
 mod notifications;
 mod ollama;
 mod pasteboard;
+mod path_probe;
 mod pi_usage;
 mod planning;
 mod project_logo;
@@ -263,6 +264,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             teleport::teleport_status,
+            path_probe::path_is_file,
             services::services_status,
             teleport::teleport_nodes,
             remote::remote_machines,
