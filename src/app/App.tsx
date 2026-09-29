@@ -558,6 +558,7 @@ import type { InboxSessionPortal } from "../features/inbox/ui/InboxDiscussionPan
 import { inboxAskKey, inboxAskPrompt } from "../features/inbox/model/inboxAsk";
 import { NotesView } from "../features/notes/ui";
 import { AutomationsView } from "../features/automations/ui/AutomationsView";
+import { checkAutomationGate } from "../features/automations/model/automationGateRun";
 import { CalendarView } from "../features/planning/ui/CalendarView";
 import {
   githubWorkItemThread,
@@ -6972,6 +6973,14 @@ export default function App({
         reservationId = undefined;
       };
       try {
+        // Laya pre-check: may skip the run or add rule reminders (fail-open).
+        const gate = await checkAutomationGate(automation, prompt);
+        if (gate.action === "skip") {
+          await updateAutomationRun(run.id, "skipped", { error: gate.reason });
+          return;
+        }
+        if (gate.prefix) prompt = `${gate.prefix}\n\n${prompt}`;
+        const gateNote = gate.note;
         const eventRun = run.trigger === "event";
         const linkedWorkItem =
           sourceWorkItem ?? linkedWorkItemFromAutomationEvent(run);
@@ -7089,9 +7098,10 @@ export default function App({
                 : outcome.status === "cancelled"
                   ? "cancelled"
                   : "failed";
+            const error = outcome.error ?? gateNote;
             void updateAutomationRun(run.id, status, {
               sessionId: session.id,
-              ...(outcome.error ? { error: outcome.error } : {}),
+              ...(error ? { error } : {}),
             })
               .catch(() => undefined)
               .finally(releaseReservation);

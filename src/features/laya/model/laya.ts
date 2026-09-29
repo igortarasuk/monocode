@@ -50,9 +50,6 @@ export type LayaAnswer = {
 
 export type LayaAnswers = Record<string, LayaAnswer>;
 
-export const LAYA_PRESETS = ["sql", "test-gaps"] as const;
-export type LayaPreset = (typeof LAYA_PRESETS)[number];
-
 const num = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 const str = (value: unknown): string | undefined =>
@@ -163,6 +160,21 @@ export const startLaya = () => invoke<LayaStatus>("laya_start");
 export const stopLaya = () => invoke<void>("laya_stop");
 
 export const layaDomains = () => invoke<string[]>("laya_domains");
+
+/** Presets defined by the sandbox, each with its answer keys. */
+export async function layaPresets(): Promise<Record<string, string[]>> {
+  const value = await invoke<{ presets?: Record<string, unknown> }>(
+    "laya_presets",
+  );
+  return Object.fromEntries(
+    Object.entries(value.presets ?? {}).map(([name, keys]) => [
+      name,
+      Array.isArray(keys)
+        ? keys.filter((key): key is string => typeof key === "string")
+        : [],
+    ]),
+  );
+}
 
 export async function layaClassify(
   domain: string,

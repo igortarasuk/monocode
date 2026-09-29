@@ -202,3 +202,15 @@ describe("gate input", () => {
     expect(globToRegExp("a?.txt").test("ab.txt")).toBe(true);
   });
 });
+
+describe("gate defaults", () => {
+  it("takes the domain from Laya and never assumes one", async () => {
+    const { defaultGate } = await import("./automationGate");
+    expect(defaultGate(["terraform", "ansible"]).domain).toBe("terraform");
+    expect(defaultGate().domain).toBeUndefined();
+    expect(await runGate(defaultGate(), "p", deps())).toEqual({
+      action: "run",
+      note: "Laya unavailable: Pick a Laya domain for the pre-check",
+    });
+  });
+});

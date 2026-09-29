@@ -31,10 +31,11 @@ export type GateOutcome =
   | { action: "run"; prefix?: string; note?: string }
   | { action: "skip"; reason: string };
 
-export function defaultGate(): AutomationGate {
+/** A new gate uses the first domain Laya reports; nothing is assumed. */
+export function defaultGate(domains: readonly string[] = []): AutomationGate {
   return {
     kind: "laya-classify",
-    domain: "ansible",
+    ...(domains[0] ? { domain: domains[0] } : {}),
     threshold: 0.5,
     input: "diff",
     onPass: "skip",
@@ -205,7 +206,8 @@ export async function runGate(
         : { action: "run" };
     }
     if (gate.kind === "laya-classify") {
-      const domain = gate.domain || "ansible";
+      const domain = gate.domain;
+      if (!domain) throw new Error("Pick a Laya domain for the pre-check");
       const flags = classifyFlags(
         await deps.classify(domain, text),
         gate.threshold,
@@ -219,8 +221,9 @@ export async function runGate(
           }
         : { action: "run" };
     }
-    const preset =
-      gate.kind === "laya-preset" ? gate.preset || "test-gaps" : null;
+    const preset = gate.kind === "laya-preset" ? gate.preset : null;
+    if (gate.kind === "laya-preset" && !preset)
+      throw new Error("Pick a Laya preset for the pre-check");
     const input = preset
       ? { preset }
       : { questions: parseQuestions(gate.questions) };
@@ -233,10 +236,7 @@ export async function runGate(
     if (decision.fired)
       return {
         action: "run",
-        prefix: renderAnswerBlock(
-          preset ?? "custom questions",
-          decision,
-        ),
+        prefix: renderAnswerBlock(preset ?? "custom questions", decision),
       };
     return gate.onPass === "skip"
       ? {

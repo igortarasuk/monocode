@@ -11,7 +11,11 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
-const PRESETS: [&str; 2] = ["sql", "test-gaps"];
+/// CLI subcommands; any other valid name is a preset defined by the sandbox.
+const SUBCOMMANDS: [&str; 11] = [
+    "status", "stop", "domains", "presets", "custom", "classify", "learn", "train", "domain",
+    "stats", "help",
+];
 const STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const TRAIN_TIMEOUT: Duration = Duration::from_secs(20 * 60);
@@ -101,8 +105,10 @@ fn write_config(app: &AppHandle, config: &LayaConfig) -> Result<(), String> {
     fs::write(path, value).map_err(|error| error.to_string())
 }
 
+/// Lowercase letters, digits and hyphens, never starting with `-`.
 fn valid_domain(name: &str) -> bool {
     !name.is_empty()
+        && !name.starts_with('-')
         && name.len() <= 32
         && name
             .bytes()
@@ -122,8 +128,8 @@ fn check_args(args: &[&str]) -> Result<Duration, String> {
     let ok = match args {
         ["status"] => return Ok(STATUS_TIMEOUT),
         ["stop"] => return Ok(STOP_TIMEOUT),
-        ["domains"] | ["custom"] => true,
-        [preset] => PRESETS.contains(preset),
+        ["domains"] | ["presets"] | ["custom"] => true,
+        [preset] => valid_domain(preset) && !SUBCOMMANDS.contains(preset),
         ["classify" | "learn" | "domain" | "stats", domain] => valid_domain(domain),
         ["train", domain] => {
             return valid_domain(domain)
@@ -440,6 +446,13 @@ pub async fn laya_train(
     .await
 }
 
+/// Presets defined by the sandbox, with their answer keys.
+#[tauri::command]
+pub async fn laya_presets(app: AppHandle) -> Result<Value, String> {
+    let config = read_config(&app);
+    blocking(move || run_json(&config, &["presets"], None)).await
+}
+
 /// Rules of a domain (`laya domain <name>`), for the management page.
 #[tauri::command]
 pub async fn laya_domain(app: AppHandle, domain: String) -> Result<Value, String> {
@@ -465,6 +478,8 @@ mod tests {
         assert_eq!(check_args(&["domains"]), Ok(REQUEST_TIMEOUT));
         assert_eq!(check_args(&["sql"]), Ok(REQUEST_TIMEOUT));
         assert_eq!(check_args(&["test-gaps"]), Ok(REQUEST_TIMEOUT));
+        assert_eq!(check_args(&["presets"]), Ok(REQUEST_TIMEOUT));
+        assert!(check_args(&["help"]).is_err());
         assert_eq!(check_args(&["custom"]), Ok(REQUEST_TIMEOUT));
         assert_eq!(check_args(&["classify", "ansible"]), Ok(REQUEST_TIMEOUT));
         assert_eq!(check_args(&["train", "ansible"]), Ok(TRAIN_TIMEOUT));
@@ -473,7 +488,7 @@ mod tests {
             Ok(TRAIN_TIMEOUT)
         );
         for args in [
-            &["rm"][..],
+            &["bad/preset"][..],
             &["classify"],
             &["classify", "../etc"],
             &["classify", "Ansible"],
@@ -495,6 +510,7 @@ mod tests {
         assert!(!valid_domain(&"a".repeat(33)));
         assert!(!valid_domain("a/b"));
         assert!(!valid_domain("a_b"));
+        assert!(!valid_domain("-h"));
     }
 
     fn output(success: bool, stdout: &str, stderr: &str) -> RunOutput {

@@ -489,6 +489,7 @@ pub fn run() {
             laya::laya_predict,
             laya::laya_learn,
             laya::laya_train,
+            laya::laya_presets,
             laya::laya_domain,
             laya::laya_stats,
             ollama::ollama_list,
