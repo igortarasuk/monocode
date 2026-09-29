@@ -1,4 +1,5 @@
 import { ask } from "@tauri-apps/plugin-dialog";
+import { describeTextGenerator } from "../../../integrations/harness/core/textGenerator";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Check,
@@ -534,7 +535,8 @@ function ChangedFiles({
     try {
       setMessage(await generateCommitMessage(cwd, textHarness));
     } catch (error) {
-      fail(error);
+      const reason = error instanceof Error ? error.message : String(error);
+      fail(new Error(`${describeTextGenerator(cwd, textHarness)}: ${reason}`));
     } finally {
       setBusy(null);
     }
@@ -690,7 +692,7 @@ function ChangedFiles({
           />
           <button
             type="button"
-            title="Generate commit message"
+            title={`Generate commit message with ${describeTextGenerator(cwd, textHarness)}`}
             aria-label="Generate commit message"
             disabled={!canGenerate}
             onClick={() => void generate()}

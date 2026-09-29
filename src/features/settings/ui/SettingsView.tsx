@@ -41,6 +41,7 @@ import {
 import { Popover } from "../../../shared/ui/Popover";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { LayaSettings } from "../../laya/ui/LayaSettings";
+import { TextGeneratorSettingsCard } from "../../providers/ui/TextGeneratorSettings";
 import { JiraSettings } from "./JiraSettings";
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
@@ -3190,6 +3191,14 @@ function ProvidersPage({
   return (
     <>
       <ProviderAccountsSettings />
+
+      <Group
+        id="text-generator"
+        title="Commit and PR text"
+        description="Provider, model and account that write commit messages, pull request text and titles."
+      >
+        <TextGeneratorSettingsCard cwd={cwd ?? "~"} />
+      </Group>
 
       <Group
         id="agent-clis"
