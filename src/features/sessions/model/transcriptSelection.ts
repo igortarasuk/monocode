@@ -3,6 +3,8 @@ export const SELECTABLE_AGENT_RESPONSE_ATTR = "data-selectable-agent-response";
 export type TranscriptSelection = {
   text: string;
   rect: DOMRect;
+  /** The selection as markdown, keeping tables, lists and code. */
+  markdown?: string;
 };
 
 export type TranscriptSelectionCandidate = {
