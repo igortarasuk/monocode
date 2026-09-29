@@ -17,6 +17,9 @@ pub struct SshTarget {
     pub target: String,
     pub port: Option<u16>,
     pub remote_port: u16,
+    /// Reach the host through a Teleport cluster instead of plain SSH.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teleport: Option<crate::teleport::TeleportRoute>,
 }
 
 pub fn validate_target(target: &str, port: Option<u16>) -> Result<String, String> {
@@ -202,6 +205,9 @@ fn command(target: &SshTarget, interactive: bool) -> Command {
             "BatchMode=yes"
         },
     ]);
+    if let Some(route) = &target.teleport {
+        command.args(crate::teleport::ssh_args(route));
+    }
     if let Some(port) = target.port {
         command.args(["-p", &port.to_string()]);
     }
@@ -696,6 +702,7 @@ mod tests {
             target: required("MONOCODE_TEST_SSH_TARGET"),
             port: Some(required("MONOCODE_TEST_SSH_PORT").parse().unwrap()),
             remote_port: required("MONOCODE_TEST_HOST_PORT").parse().unwrap(),
+            teleport: None,
         };
         let make_command = || {
             let mut command = command(&target, false);

@@ -13,6 +13,8 @@ import type {
   RemoteMachine,
   SshSetup,
 } from "../model/protocol";
+import { TeleportPicker } from "./TeleportPicker";
+import type { TeleportRoute } from "../model/teleport";
 
 const input =
   "w-full rounded-lg border border-content/15 bg-content/3 px-3 py-2 text-[13px] outline-none focus:border-content/35";
@@ -25,6 +27,7 @@ export function ConnectionsSettings() {
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [port, setPort] = useState("");
+  const [teleport, setTeleport] = useState<TeleportRoute | null>(null);
   const [jobId, setJobId] = useState<string>();
   const [job, setJob] = useState<SshSetup>();
   const [busy, setBusy] = useState(false);
@@ -74,6 +77,7 @@ export function ConnectionsSettings() {
             setTarget("");
             setName("");
             setPort("");
+            setTeleport(null);
             setNotice(
               updatingMachine
                 ? `${next.machine.name} was updated and reconnected.`
@@ -176,6 +180,7 @@ export function ConnectionsSettings() {
             target: target.trim(),
             name: name.trim(),
             port: port ? Number(port) : null,
+            ...(teleport ? { teleport } : {}),
           });
       if (!alive.current) {
         await invoke("remote_ssh_cancel", { jobId: id });
@@ -397,6 +402,16 @@ export function ConnectionsSettings() {
               SSH
             </span>
           </div>
+          <TeleportPicker
+            disabled={busy}
+            selected={teleport}
+            onPick={(pick) => {
+              setTeleport(pick.route);
+              setTarget(pick.target);
+              if (!name.trim()) setName(pick.name);
+            }}
+            onClear={() => setTeleport(null)}
+          />
           <label className="flex flex-col gap-1.5 text-[12px] text-content/65">
             SSH address
             <input
