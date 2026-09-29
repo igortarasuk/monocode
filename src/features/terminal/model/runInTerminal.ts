@@ -60,3 +60,44 @@ export function shellCommandFromCode(code: string): string {
     : lines;
   return commands.filter((line) => line.trim()).join("\n");
 }
+
+export const TERMINAL_COMMAND_DONE_EVENT = "monocode:terminal-command-done";
+
+export type TerminalCommandDone = { token: string; code: number };
+
+const DONE_OSC =
+  /\u001b\]777;monocode-done;([A-Za-z0-9-]{1,64});(-?\d{1,5})(?:\u0007|\u001b\\)/g;
+
+/**
+ * Wrap a command so the shell reports its exit status when it finishes. The
+ * brace group spans lines, so the shell reads everything before running it
+ * and nothing is left in the input buffer for a password prompt to consume.
+ * The report is an OSC sequence xterm does not display. bash and zsh only.
+ */
+export function wrapWithDoneReport(command: string, token: string): string {
+  return `{ ${command}\n}; printf '\\033]777;monocode-done;%s;%d\\007' ${token} $?`;
+}
+
+/** Completed reports in a chunk of terminal output, plus the unparsed tail. */
+export function scanCommandDone(
+  chunk: string,
+  buffer: string,
+): { done: TerminalCommandDone[]; rest: string } {
+  const merged = buffer + chunk;
+  const done: TerminalCommandDone[] = [];
+  let last = 0;
+  for (const match of merged.matchAll(DONE_OSC)) {
+    done.push({ token: match[1], code: Number(match[2]) });
+    last = (match.index ?? 0) + match[0].length;
+  }
+  const tail = merged.slice(last);
+  return { done, rest: tail.length > 256 ? tail.slice(-256) : tail };
+}
+
+/** Message for the agent: the command and its exit status, never its output. */
+export function doneReportMessage(command: string, code: number): string {
+  const fence = command.includes("\n")
+    ? "\n```sh\n" + command + "\n```\n"
+    : ` \`${command}\` `;
+  return `I ran${fence}in the terminal: ${code === 0 ? "done" : `failed`} (exit ${code}). Output was not shared.`;
+}

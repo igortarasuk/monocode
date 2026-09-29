@@ -561,9 +561,13 @@ import { AutomationsView } from "../features/automations/ui/AutomationsView";
 import { ServicesStatus } from "./shell/ServicesStatus";
 import {
   RUN_IN_TERMINAL_EVENT,
+  TERMINAL_COMMAND_DONE_EVENT,
   bangCommand,
+  doneReportMessage,
   queueTerminalInput,
+  wrapWithDoneReport,
   type RunInTerminalRequest,
+  type TerminalCommandDone,
 } from "../features/terminal/model/runInTerminal";
 import { AssistantsView } from "../features/assistants/ui/AssistantsView";
 import {
@@ -6961,6 +6965,26 @@ export default function App({
   submitAfterProjectSyncRef.current = submitSession;
   // Interactive callers use the immediate result to clear their composer. The
   // queued-launch receiver uses submitSession to await the actual acceptance.
+  const terminalReports = useRef(
+    new Map<string, { sessionId: string; command: string }>(),
+  );
+  const queuedReports = useRef(new Map<string, string[]>());
+  /** Open a terminal running `command`; its exit status goes to the session. */
+  const runReportedCommand = useCallback(
+    (cwd: string, command: string, sessionId?: string) => {
+      if (!sessionId) return openProjectTerminal(cwd, command);
+      const token = crypto.randomUUID();
+      terminalReports.current.set(token, { sessionId, command });
+      const opened = openProjectTerminal(
+        cwd,
+        wrapWithDoneReport(command, token),
+      );
+      if (!opened) terminalReports.current.delete(token);
+      return opened;
+    },
+    [openProjectTerminal],
+  );
+
   const onSubmit = useCallback(
     (...args: Parameters<Submit>): boolean => {
       // `! cmd` runs in a project terminal, like Claude Code's shell mode.
@@ -6968,7 +6992,8 @@ export default function App({
       if (command && !args[2]?.length) {
         const session = sessionsRef.current.find((item) => item.id === args[0]);
         const cwd = session ? sessionWorkCwd(session) : gitCwd;
-        if (isLocalProject(cwd) && openProjectTerminal(cwd, command)) return true;
+        if (isLocalProject(cwd) && runReportedCommand(cwd, command, args[0]))
+          return true;
       }
       const result = submitSession(...args);
       if (typeof result === "boolean") return result;
@@ -6976,7 +7001,7 @@ export default function App({
       void result.catch(() => undefined);
       return true;
     },
-    [gitCwd, openProjectTerminal, submitSession],
+    [gitCwd, runReportedCommand, submitSession],
   );
 
   useEffect(() => {
@@ -6984,11 +7009,44 @@ export default function App({
       const { command, cwd } = (event as CustomEvent<RunInTerminalRequest>)
         .detail;
       const workdir = cwd && isLocalProject(cwd) ? cwd : gitCwd;
-      openProjectTerminal(workdir, command);
+      runReportedCommand(workdir, command, activeSessionIdRef.current);
     };
     window.addEventListener(RUN_IN_TERMINAL_EVENT, run);
     return () => window.removeEventListener(RUN_IN_TERMINAL_EVENT, run);
-  }, [gitCwd, openProjectTerminal]);
+  }, [gitCwd, runReportedCommand]);
+
+  // Tell the session a terminal command finished: command and exit status
+  // only, so passwords typed into it and its output never reach the agent.
+  useEffect(() => {
+    const done = (event: Event) => {
+      const { token, code } = (event as CustomEvent<TerminalCommandDone>)
+        .detail;
+      const report = terminalReports.current.get(token);
+      if (!report) return;
+      terminalReports.current.delete(token);
+      const message = doneReportMessage(report.command, code);
+      if (submitSession(report.sessionId, message) === false) {
+        const queued = queuedReports.current.get(report.sessionId) ?? [];
+        queuedReports.current.set(report.sessionId, [...queued, message]);
+      }
+    };
+    window.addEventListener(TERMINAL_COMMAND_DONE_EVENT, done);
+    return () => window.removeEventListener(TERMINAL_COMMAND_DONE_EVENT, done);
+  }, [submitSession]);
+
+  useEffect(() => {
+    for (const [sessionId, messages] of queuedReports.current) {
+      const session = sessions.find((item) => item.id === sessionId);
+      if (!session) {
+        queuedReports.current.delete(sessionId);
+        continue;
+      }
+      if (session.busy) continue;
+      queuedReports.current.delete(sessionId);
+      const result = submitSession(sessionId, messages.join("\n\n"));
+      if (result === false) queuedReports.current.set(sessionId, messages);
+    }
+  }, [sessions, submitSession]);
 
   const automationSessionReservations = useRef(new Set<string>());
   const automationRecoveryRef = useRef<Promise<void> | null>(null);
