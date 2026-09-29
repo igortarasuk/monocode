@@ -89,7 +89,7 @@ export type HarnessAdapter = {
   /** Optional LLM tab title for the first turn. */
   generateTitle?(input: TitleInput): Promise<GeneratedSessionTitle | null>;
   /** Optional LLM commit message from staged changes. */
-  generateCommitMessage?(cwd: string): Promise<string>;
+  generateCommitMessage?(cwd: string, signal?: AbortSignal): Promise<string>;
   /** Optional LLM pull request title/body from branch diff context. */
   generatePrContent?(
     cwd: string,
@@ -414,12 +414,14 @@ export async function generateHarnessTitle(
 export async function generateHarnessCommitMessage(
   harness: HarnessId,
   cwd: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const adapter = requireHarness(harness);
   if (!adapter.generateCommitMessage) {
     throw new Error(`${harness} does not support commit message generation`);
   }
-  return adapter.generateCommitMessage(cwd);
+  signal?.throwIfAborted();
+  return adapter.generateCommitMessage(cwd, signal);
 }
 
 export async function generateHarnessPrContent(

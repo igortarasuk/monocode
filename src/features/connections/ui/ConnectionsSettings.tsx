@@ -8,10 +8,11 @@ import {
   remoteRequest,
   useRemoteMachines,
 } from "../model/connections";
-import type {
-  HostDescriptor,
-  RemoteMachine,
-  SshSetup,
+import {
+  REMOTE_PROVIDERS,
+  type HostDescriptor,
+  type RemoteMachine,
+  type SshSetup,
 } from "../model/protocol";
 import { TeleportPicker } from "./TeleportPicker";
 import type { TeleportRoute } from "../model/teleport";
@@ -131,11 +132,12 @@ export function ConnectionsSettings() {
               const host = await remoteRequest<HostDescriptor>(
                 machine.id,
                 "environment.describe",
+                { supportedProviders: REMOTE_PROVIDERS },
               );
               if (host.environmentId !== machine.environmentId)
                 throw new Error("Host identity changed");
               if (!host.providers.length)
-                label = "Connected · install Codex or Claude on the host";
+                label = "Connected · install a supported provider on the host";
               const update =
                 !host.capabilities?.includes("workspace.run") ||
                 !host.capabilities?.includes("git.worktreeCreate");
