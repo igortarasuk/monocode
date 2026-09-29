@@ -1,5 +1,9 @@
 import { ChevronDown, GripVertical, X } from "../../../shared/ui/icons";
 import {
+  replyNoteContent,
+  type ReplyNoteKind,
+} from "../../assistants/model/replyNotes";
+import {
   memo,
   useCallback,
   useEffect,
@@ -500,14 +504,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => true,
   );
   const saveNote = useCallback(
-    async (text: string) => {
+    async (text: string, kind?: ReplyNoteKind) => {
       const sessionTitle = sessionDisplayTitle(session.title, session.harness);
       await createNote({
         title:
           sessionTitle && sessionTitle !== "New session"
             ? sessionTitle
             : noteTitle(text),
-        body: text,
+        ...replyNoteContent(text, session.cwd, kind),
         sourceSessionId: session.id,
         sourceCwd: session.cwd,
       });

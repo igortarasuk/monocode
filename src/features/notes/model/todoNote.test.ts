@@ -5,12 +5,13 @@ describe("replyToTodoBody", () => {
   it("turns top-level list items into checkboxes", () => {
     expect(
       replyToTodoBody("Plan:\n- buy milk\n* call Ann\n1. ship it\n2) review"),
-    ).toBe("Plan:\n- [ ] buy milk\n- [ ] call Ann\n- [ ] ship it\n- [ ] review");
+    ).toBe(
+      "Plan:\n- [ ] buy milk\n- [ ] call Ann\n- [ ] ship it\n- [ ] review",
+    );
   });
 
   it("leaves nested items, code fences and existing checkboxes alone", () => {
-    const text =
-      "- [x] done\n- todo\n  - nested\n```\n- not a task\n```";
+    const text = "- [x] done\n- todo\n  - nested\n```\n- not a task\n```";
     expect(replyToTodoBody(text)).toBe(
       "- [x] done\n- [ ] todo\n  - nested\n```\n- not a task\n```",
     );

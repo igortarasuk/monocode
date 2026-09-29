@@ -1,6 +1,7 @@
 import {
   ArrowUp,
   Check,
+  CheckCheck,
   ChevronRight,
   CircleDashed,
   Copy,
@@ -16,6 +17,7 @@ import {
   Wrench,
   X,
 } from "../../../shared/ui/icons";
+import type { ReplyNoteKind } from "../../assistants/model/replyNotes";
 import {
   memo,
   startTransition,
@@ -171,7 +173,7 @@ type Props = {
   backgroundTasks?: string[];
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onAddToChat?: (text: string) => void;
-  onSaveNote?: (text: string) => void | Promise<void>;
+  onSaveNote?: (text: string, kind?: ReplyNoteKind) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onSaveSelectionNote?: (text: string) => void | Promise<void>;
@@ -1075,7 +1077,7 @@ function TurnDuration({
   harness?: HarnessId;
   completedAt?: number;
   copyText?: string;
-  onSaveNote?: (text: string) => void | Promise<void>;
+  onSaveNote?: (text: string, kind?: ReplyNoteKind) => void | Promise<void>;
   fromHarness?: HarnessId;
   /** The turn's own model, so a same-harness second opinion can hide it. */
   fromModel?: string;
@@ -1317,8 +1319,26 @@ function SaveNoteButton({
   onSave,
 }: {
   text: string;
-  onSave: (text: string) => void | Promise<void>;
+  onSave: (text: string, kind?: ReplyNoteKind) => void | Promise<void>;
 }) {
+  return (
+    <>
+      <ReplySaveButton text={text} kind="note" onSave={onSave} />
+      <ReplySaveButton text={text} kind="todo" onSave={onSave} />
+    </>
+  );
+}
+
+function ReplySaveButton({
+  text,
+  kind,
+  onSave,
+}: {
+  text: string;
+  kind: ReplyNoteKind;
+  onSave: (text: string, kind?: ReplyNoteKind) => void | Promise<void>;
+}) {
+  const label = kind === "todo" ? "Save as to-do" : "Save as note";
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1337,15 +1357,15 @@ function SaveNoteButton({
       <button
         type="button"
         disabled={pending}
-        title={saved ? "Saved to Notes" : "Save as note"}
-        aria-label={saved ? "Saved to Notes" : "Save as note"}
+        title={saved ? "Saved to Notes" : label}
+        aria-label={saved ? "Saved to Notes" : label}
         className="rounded-md p-1 text-content/40 hover:bg-content/8 hover:text-content/70"
         onClick={async () => {
           setError(null);
           setSaved(false);
           setPending(true);
           try {
-            await onSave(text);
+            await (kind === "todo" ? onSave(text, kind) : onSave(text));
             playCue("copy");
             setSaved(true);
             if (timer.current != null) window.clearTimeout(timer.current);
@@ -1359,6 +1379,8 @@ function SaveNoteButton({
       >
         {saved ? (
           <Check className="size-3.5" strokeWidth={1.75} />
+        ) : kind === "todo" ? (
+          <CheckCheck className="size-3.5" strokeWidth={1.75} />
         ) : (
           <FilePlusCorner className="size-3.5" strokeWidth={1.75} />
         )}
@@ -1432,7 +1454,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   embedded?: boolean;
   cwd?: string;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
-  onSaveNote?: (text: string) => void | Promise<void>;
+  onSaveNote?: (text: string, kind?: ReplyNoteKind) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onOpenFile?: (path: string) => void;
@@ -1588,7 +1610,7 @@ function UserMessageBlock({
   onEdit?: () => void;
   editing?: boolean;
   cwd?: string;
-  onSaveNote?: (text: string) => void | Promise<void>;
+  onSaveNote?: (text: string, kind?: ReplyNoteKind) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
 }) {
