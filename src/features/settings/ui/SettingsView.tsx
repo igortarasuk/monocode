@@ -40,6 +40,7 @@ import {
 } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { LayaSettings } from "../../laya/ui/LayaSettings";
 import { JiraSettings } from "./JiraSettings";
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
@@ -1182,6 +1183,14 @@ function InboxPage({
         description="Merge requests from GitLab.com or a self-managed instance."
       >
         <GitlabSettings />
+      </Group>
+
+      <Group
+        id="laya"
+        title="Laya"
+        description="Local code checks from the Laya sandbox, used by automation pre-checks and agents."
+      >
+        <LayaSettings />
       </Group>
 
       <Group
