@@ -29,6 +29,26 @@ export type AutomationRunStatus =
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
+/** Laya pre-check for a run; see automationGate.ts. */
+export type AutomationGate = {
+  kind: "laya-classify" | "laya-preset" | "laya-custom";
+  /** laya-classify: the Laya domain, e.g. "ansible". */
+  domain?: string;
+  /** laya-preset: "sql" or "test-gaps". */
+  preset?: string;
+  /** laya-custom: JSON text of the questions object. */
+  questions?: string;
+  /** Answer key that decides for presets and custom questions; default first. */
+  key?: string;
+  /** 0..1; a rule or answer at or above it fires the gate. */
+  threshold: number;
+  input: "diff" | "prompt" | "files";
+  /** input=files: glob relative to the automation folder. */
+  filesGlob?: string;
+  /** What happens when the gate does not fire. */
+  onPass: "run" | "skip";
+};
+
 export type Automation = {
   id: string;
   name: string;
@@ -49,6 +69,8 @@ export type Automation = {
   time: string;
   dayOfWeek: number;
   triggers?: AutomationTrigger[] | null;
+  /** Laya pre-check that decides whether a run starts a session. */
+  gate?: AutomationGate | null;
   missedRunGraceMinutes: number;
   enabled: boolean;
   nextRunAt: number;
@@ -142,6 +164,7 @@ export type AutomationDraft = {
   time: string;
   dayOfWeek: number;
   triggers: AutomationTrigger[];
+  gate?: AutomationGate | null;
   missedRunGraceMinutes: number;
   enabled: boolean;
 };
@@ -435,6 +458,7 @@ export function draftFromAutomation(automation: Automation): AutomationDraft {
     time: automation.time,
     dayOfWeek: automation.dayOfWeek,
     triggers: automationTriggers(automation),
+    gate: automation.gate ?? null,
     missedRunGraceMinutes: automation.missedRunGraceMinutes,
     enabled: automation.enabled,
   };

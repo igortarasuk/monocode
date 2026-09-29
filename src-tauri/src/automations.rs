@@ -42,6 +42,9 @@ pub struct Automation {
     day_of_week: i64,
     #[serde(default)]
     triggers: Option<Vec<AutomationTrigger>>,
+    /// Optional Laya pre-check, opaque JSON owned by the frontend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gate: Option<serde_json::Value>,
     missed_run_grace_minutes: i64,
     enabled: bool,
     next_run_at: i64,
@@ -86,6 +89,8 @@ pub struct AutomationUpsert {
     day_of_week: i64,
     #[serde(default)]
     triggers: Option<Vec<AutomationTrigger>>,
+    #[serde(default)]
+    gate: Option<serde_json::Value>,
     missed_run_grace_minutes: i64,
     #[serde(default = "default_true")]
     enabled: bool,
@@ -302,6 +307,13 @@ fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
     }
     if input.next_run_at <= now {
         return Err("The next automation run must be in the future.".into());
+    }
+    if input
+        .gate
+        .as_ref()
+        .is_some_and(|gate| gate.to_string().len() > 16 * 1024)
+    {
+        return Err("The Laya pre-check is too large.".into());
     }
     if let Some(triggers) = &input.triggers {
         if triggers.len() > MAX_TRIGGERS {
@@ -682,6 +694,7 @@ pub fn automations_upsert(
         time: automation.time,
         day_of_week: automation.day_of_week,
         triggers,
+        gate: automation.gate.filter(|gate| gate.is_object()),
         missed_run_grace_minutes: automation.missed_run_grace_minutes,
         enabled: automation.enabled,
         next_run_at: automation.next_run_at,
@@ -1055,6 +1068,7 @@ mod tests {
             time: "09:00".into(),
             day_of_week: 1,
             triggers: None,
+            gate: None,
             missed_run_grace_minutes: 720,
             enabled: true,
             next_run_at: 1,
@@ -1104,6 +1118,7 @@ mod tests {
             time: "09:00".into(),
             day_of_week: 1,
             triggers: None,
+            gate: None,
             missed_run_grace_minutes: 720,
             enabled: true,
             next_run_at: 1,
@@ -1123,6 +1138,29 @@ mod tests {
         assert_eq!(triggers.len(), 1);
         assert_eq!(triggers[0].kind, "gitlab");
         assert_eq!(triggers[0].event, "merge_request_opened");
+    }
+
+    #[test]
+    fn gate_is_optional_and_round_trips() {
+        let legacy = serde_json::json!({
+            "id": "a", "name": "A", "prompt": "p", "harness": "codex", "model": "m",
+            "cwd": "/tmp", "workspaceMode": "current", "reuseSession": false,
+            "runtimeMode": "auto", "scheduleKind": "daily", "minute": 0, "time": "09:00",
+            "dayOfWeek": 1, "missedRunGraceMinutes": 60, "enabled": true, "nextRunAt": 1,
+            "createdAt": 1, "updatedAt": 1
+        });
+        let restored: Automation = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(restored.gate.is_none());
+        assert!(serde_json::to_value(&restored)
+            .unwrap()
+            .get("gate")
+            .is_none());
+
+        let mut gated = legacy;
+        gated["gate"] = serde_json::json!({ "kind": "laya-classify", "domain": "ansible" });
+        let restored: Automation = serde_json::from_value(gated).unwrap();
+        let saved = serde_json::to_value(&restored).unwrap();
+        assert_eq!(saved["gate"]["domain"], "ansible");
     }
 
     #[test]

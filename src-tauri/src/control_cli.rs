@@ -82,7 +82,7 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 13] = [
+const APP_ACTIONS: [&str; 17] = [
     "models.list",
     "sessions.list",
     "sessions.read",
@@ -96,6 +96,10 @@ const APP_ACTIONS: [&str; 13] = [
     "notes.list",
     "notes.read",
     "notes.write",
+    "laya.status",
+    "laya.classify",
+    "laya.predict",
+    "laya.learn",
 ];
 const APP_USAGE: &str = r#"MonoCode app access — use in a thread enabled by /operator.
 
@@ -153,6 +157,14 @@ Actions:
                   to derive it from the body. Use {"id":"...","body":"..."}
                   to edit an existing note; title and tags are also optional.
                   Omitted fields stay unchanged. Reuse --request-id on retries.
+  laya.status    {}  Local Laya checker: running, device, domains.
+  laya.classify  {"domain":"<domain>","path":"roles/x/tasks/main.yml"}
+                  Flag rule violations in a file of this session (or pass
+                  "text"). Returns rule ids, p, line, nudge and an example.
+  laya.predict   {"preset":"<preset>","text":"..."} or
+                  {"questions":{"key":{"type":"noul","instructions":"..."}},"text":"..."}
+  laya.learn     {"domain":"<domain>","bad":"...","good":"...","rules":["rule-id"],"note":"..."}
+                  Store a correction so Laya stops flagging the fixed form.
 
 The output is one JSON line: {"ok":true,"result":...} or {"ok":false,"error":"..."}.
 Use --input - to pass JSON on stdin. Never print MonoCode credentials.
@@ -540,6 +552,7 @@ mod tests {
         );
         assert!(app_help().contains("notes.read"));
         assert!(app_help().contains("notes.write"));
+        assert!(app_help().contains("laya.classify"));
         for action in ["worktrees.list", "worktrees.create"] {
             assert!(matches!(
                 parse_args_for(&args(&[action]), true),

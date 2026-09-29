@@ -15,6 +15,7 @@ mod gitlab;
 mod harness;
 mod inbox_media;
 mod jira;
+mod laya;
 mod linear;
 mod link_preview;
 #[cfg(target_os = "macos")]
@@ -24,6 +25,7 @@ mod macos_background;
 mod menu;
 mod notes;
 mod notifications;
+mod ollama;
 mod pasteboard;
 mod pi_usage;
 mod planning;
@@ -480,6 +482,21 @@ pub fn run() {
             session_store::workspace_set_snapshot,
             session_store::workspace_get_snapshot,
             assistants::assistant_workspace_prepare,
+            laya::laya_status,
+            laya::laya_set_config,
+            laya::laya_start,
+            laya::laya_stop,
+            laya::laya_domains,
+            laya::laya_classify,
+            laya::laya_predict,
+            laya::laya_learn,
+            laya::laya_train,
+            laya::laya_presets,
+            laya::laya_domain,
+            laya::laya_stats,
+            ollama::ollama_list,
+            ollama::ollama_pull,
+            ollama::ollama_delete,
             notes::notes_list,
             notes::notes_get,
             notes::notes_upsert,

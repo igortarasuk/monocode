@@ -32,6 +32,14 @@ import { pathKey } from "../../../shared/lib/paths";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage } from "./sessionConversation";
+import {
+  layaClassify,
+  layaLearn,
+  layaPredict,
+  layaStatus,
+} from "../../laya/model/laya";
+import { readTextFile } from "../../../platform/tauri/fs";
+import { isEqualOrInside, joinPath } from "../../../shared/lib/paths";
 
 export type AppSessionListing = {
   id: string;
@@ -108,6 +116,10 @@ const FIELDS = new Map<string, readonly string[]>([
   ["notes.list", ["limit", "offset"]],
   ["notes.read", ["id"]],
   ["notes.write", ["id", "title", "body", "tags"]],
+  ["laya.status", []],
+  ["laya.classify", ["domain", "text", "path"]],
+  ["laya.predict", ["preset", "questions", "text"]],
+  ["laya.learn", ["domain", "bad", "good", "rules", "note"]],
 ]);
 
 function fields(action: string, input: Record<string, unknown>) {
@@ -157,6 +169,39 @@ function noteTags(value: unknown): string[] {
       "tags must be an array of at most 20 strings under 48 characters each",
     );
   return normalizeNoteTags(value as string[]);
+}
+
+const LAYA_NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const MAX_LAYA_TEXT = 256 * 1024;
+
+function layaName(value: unknown, name: string): string {
+  const text = requiredString(value, name, 32);
+  if (!LAYA_NAME_RE.test(text))
+    throw new Error(
+      `${name} must be a Laya ${name} name such as the ones laya.status lists`,
+    );
+  return text;
+}
+
+/** `text`, or a file relative to the session folder (never outside it). */
+async function layaText(
+  source: Session,
+  input: Record<string, unknown>,
+): Promise<string> {
+  if (input.text !== undefined) {
+    if (input.path !== undefined)
+      throw new Error("Pass either text or path, not both");
+    return requiredString(input.text, "text", MAX_LAYA_TEXT);
+  }
+  const relative = requiredString(input.path, "path", 1024);
+  const root = requireProject(source);
+  const path = joinPath(root, relative);
+  if (!isEqualOrInside(path, root) || relative.split(/[\\/]/).includes(".."))
+    throw new Error("path must stay inside the session folder");
+  const text = await readTextFile(path);
+  if (text.length > MAX_LAYA_TEXT)
+    throw new Error("File is larger than 256 KB; pass a smaller chunk as text");
+  return text;
 }
 
 function requireProject(source: Session): string {
@@ -529,6 +574,69 @@ export async function handleAgentApp(
         tags: tags ?? [],
         sourceSessionId: source.id,
         ...(looksLikeProject(source.cwd) ? { sourceCwd: source.cwd } : {}),
+      });
+    }
+    case "laya.status":
+      return layaStatus();
+    case "laya.classify": {
+      const domain = layaName(input.domain, "domain");
+      const result = await layaClassify(domain, await layaText(source, input));
+      return {
+        domain: result.domain,
+        flagged: result.chunks.flatMap((chunk) =>
+          chunk.flagged.map((flag) => ({
+            rule: flag.rule,
+            p: flag.p,
+            line: chunk.line,
+            nudge: flag.nudge,
+            ...(flag.example ? { example: flag.example.text } : {}),
+          })),
+        ),
+      };
+    }
+    case "laya.predict": {
+      const text = await layaText(source, { text: input.text });
+      if ((input.preset === undefined) === (input.questions === undefined))
+        throw new Error("Pass either preset or questions");
+      if (input.preset !== undefined)
+        return {
+          answers: await layaPredict(
+            { preset: layaName(input.preset, "preset") },
+            text,
+          ),
+        };
+      if (
+        !input.questions ||
+        typeof input.questions !== "object" ||
+        Array.isArray(input.questions)
+      )
+        throw new Error("questions must be an object");
+      return {
+        answers: await layaPredict(
+          { questions: input.questions as Record<string, unknown> },
+          text,
+        ),
+      };
+    }
+    case "laya.learn": {
+      const domain = layaName(input.domain, "domain");
+      const rules = input.rules;
+      if (
+        !Array.isArray(rules) ||
+        !rules.length ||
+        rules.length > 32 ||
+        rules.some(
+          (rule) => typeof rule !== "string" || !LAYA_NAME_RE.test(rule),
+        )
+      )
+        throw new Error("rules must be a non-empty array of rule ids");
+      return layaLearn(domain, {
+        bad: requiredString(input.bad, "bad", MAX_LAYA_TEXT),
+        good: requiredString(input.good, "good", MAX_LAYA_TEXT),
+        rules: rules as string[],
+        ...(input.note !== undefined
+          ? { note: requiredString(input.note, "note", 2000) }
+          : {}),
       });
     }
   }

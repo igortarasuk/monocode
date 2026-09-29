@@ -382,6 +382,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "token self-managed merge request connect",
   },
   {
+    id: "laya",
+    section: "inbox",
+    label: "Laya",
+    keywords: "local model classifier ollama sandbox pre-check automation",
+  },
+  {
     id: "azuredevops",
     section: "inbox",
     label: "ADO",
