@@ -1,5 +1,9 @@
 import { Terminal } from "@xterm/xterm";
-import { takeTerminalInput } from "../model/runInTerminal";
+import {
+  TERMINAL_COMMAND_DONE_EVENT,
+  scanCommandDone,
+  takeTerminalInput,
+} from "../model/runInTerminal";
 import { useEffect, useRef } from "react";
 import {
   getPtyStatus,
@@ -218,10 +222,23 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
     });
 
     let oscBuffer = "";
+    let doneBuffer = "";
+    const doneDecoder = new TextDecoder();
 
     const unsubscribe = subscribePty(
       id,
       (data) => {
+        // Exit status of a command run with a done report (`! cmd`).
+        const scannedDone = scanCommandDone(
+          doneDecoder.decode(data, { stream: true }),
+          doneBuffer,
+        );
+        doneBuffer = scannedDone.rest;
+        for (const done of scannedDone.done) {
+          window.dispatchEvent(
+            new CustomEvent(TERMINAL_COMMAND_DONE_EVENT, { detail: done }),
+          );
+        }
         const onMeta = onMetaChangeRef.current;
         if (onMeta) {
           const text = new TextDecoder().decode(data);
