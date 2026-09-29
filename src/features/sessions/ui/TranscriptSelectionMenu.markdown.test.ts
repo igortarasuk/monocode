@@ -4,12 +4,13 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
 
-it("adds the markdown of a selection to notes", async () => {
+it("adds the markdown of a selection to notes and chat", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   const onAddToNotes = vi.fn();
+  const onAddToChat = vi.fn();
   await act(async () =>
     root.render(
       createElement(TranscriptSelectionMenu, {
@@ -19,6 +20,7 @@ it("adds the markdown of a selection to notes", async () => {
           rect: new DOMRect(10, 10, 20, 10),
         },
         onAddToNotes,
+        onAddToChat,
         onDismiss: vi.fn(),
       }),
     ),
@@ -28,6 +30,27 @@ it("adds the markdown of a selection to notes", async () => {
   )!;
   await act(async () => button.click());
   expect(onAddToNotes).toHaveBeenCalledWith(
+    "| Host | Status |\n| --- | --- |\n| sk12 | ok |",
+  );
+  await act(async () =>
+    root.render(
+      createElement(TranscriptSelectionMenu, {
+        selection: {
+          text: "Host Status sk12 ok",
+          markdown: "| Host | Status |\n| --- | --- |\n| sk12 | ok |",
+          rect: new DOMRect(10, 10, 20, 10),
+        },
+        onAddToNotes,
+        onAddToChat,
+        onDismiss: vi.fn(),
+      }),
+    ),
+  );
+  const chat = [...document.body.querySelectorAll("button")].find((item) =>
+    item.textContent?.includes("Add to chat"),
+  )!;
+  await act(async () => chat.click());
+  expect(onAddToChat).toHaveBeenCalledWith(
     "| Host | Status |\n| --- | --- |\n| sk12 | ok |",
   );
   act(() => root.unmount());

@@ -51,7 +51,7 @@ export function TranscriptSelectionMenu({
         {onAddToChat ? (
           <SelectionAction
             label="Add to chat"
-            onSelect={() => onAddToChat(selection.text)}
+            onSelect={() => onAddToChat(selection.markdown ?? selection.text)}
             onDismiss={onDismiss}
           >
             <MessageSquarePlus
@@ -64,9 +64,7 @@ export function TranscriptSelectionMenu({
         {onAddToNotes ? (
           <SelectionAction
             label="Add to notes"
-            onSelect={() =>
-              onAddToNotes(selection.markdown ?? selection.text)
-            }
+            onSelect={() => onAddToNotes(selection.markdown ?? selection.text)}
             onDismiss={onDismiss}
           >
             <FilePlusCorner
