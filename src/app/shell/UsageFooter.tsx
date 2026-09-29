@@ -41,6 +41,7 @@ import {
   providerAccounts,
   saveProviderAccount,
   selectProviderAccount,
+  hasProjectAccountChoice,
   selectedProviderAccountId,
   subscribeProviderAccounts,
   type ProviderAccountProvider,
@@ -101,6 +102,15 @@ export function UsageFooter({
       : selectedProviderAccountId("codex", project);
   const claudeAccounts = providerAccounts("claude");
   const codexAccounts = providerAccounts("codex");
+  // With several profiles, a project must name its account explicitly.
+  const claudeNeedsChoice =
+    !(session?.harness === "claude" && session.providerAccountId) &&
+    claudeAccounts.length > 1 &&
+    !hasProjectAccountChoice("claude", project);
+  const codexNeedsChoice =
+    !(session?.harness === "codex" && session.providerAccountId) &&
+    codexAccounts.length > 1 &&
+    !hasProjectAccountChoice("codex", project);
   const claudeAccountAvailable = providerAccountExists(
     "claude",
     claudeAccountId,
@@ -323,6 +333,7 @@ export function UsageFooter({
               now={now}
               accounts={claudeAccounts}
               accountId={claudeAccountId}
+              needsAccountChoice={claudeNeedsChoice}
               onSelectAccount={(accountId) =>
                 selectAccount("claude", accountId)
               }
@@ -340,6 +351,7 @@ export function UsageFooter({
               project={project}
               accounts={codexAccounts}
               accountId={codexAccountId}
+              needsAccountChoice={codexNeedsChoice}
               onSelectAccount={(accountId) => selectAccount("codex", accountId)}
               onAddAccount={(label) => addAccount("codex", label)}
               onManageAccounts={

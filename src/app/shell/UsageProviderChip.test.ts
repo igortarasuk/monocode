@@ -184,6 +184,36 @@ describe("UsageProviderChip", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it("asks for an account when the project has not picked one", async () => {
+    act(() =>
+      root.render(
+        createElement(UsageProviderChip, {
+          limits: codexLimits(),
+          now,
+          accountId: "default",
+          needsAccountChoice: true,
+          accounts: [
+            {
+              id: "default",
+              provider: "codex",
+              label: "Default account",
+              isDefault: true,
+            },
+            { id: "account-work", provider: "codex", label: "Work" },
+          ],
+          onSelectAccount: vi.fn(),
+          onAddAccount: vi.fn(),
+        }),
+      ),
+    );
+
+    const trigger = button("Codex usage details");
+    expect(trigger.textContent).toContain("Choose account");
+    expect(trigger.textContent).not.toContain("Default account");
+    await act(async () => trigger.click());
+    expect(document.body.textContent).toContain("Codex accounts");
+  });
+
   it("keeps account switching available when the pinned account was removed", async () => {
     act(() =>
       root.render(

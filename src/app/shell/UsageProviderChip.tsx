@@ -46,6 +46,7 @@ import {
   UsageMeter,
 } from "../../features/providers/ui/ProviderAccountUsage";
 import {
+  accountDisplayName,
   identityKey,
   identityOrganizationTag,
   identitySubtitle,
@@ -68,6 +69,7 @@ export function UsageProviderChip({
   project,
   accounts = [],
   accountId,
+  needsAccountChoice = false,
   onSelectAccount,
   onAddAccount,
   onManageAccounts,
@@ -81,6 +83,8 @@ export function UsageProviderChip({
   project?: string;
   accounts?: ProviderAccount[];
   accountId?: string;
+  /** The project has not picked an account yet; ask instead of showing one. */
+  needsAccountChoice?: boolean;
   onSelectAccount?: (accountId: string) => void;
   onAddAccount?: (label: string) => Promise<ProviderAccount>;
   onManageAccounts?: () => void;
@@ -235,9 +239,18 @@ export function UsageProviderChip({
               ? "Loading usage…"
               : "Usage details")
         }
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (needsAccountChoice && accounts.length > 1)
+            setAccountView("accounts");
+          setOpen((value) => !value);
+        }}
       >
         <HarnessIcon harness={iconHarness} className="size-3 shrink-0" />
+        {accounts.length > 1 && needsAccountChoice ? (
+          <span className="rounded bg-amber-400/15 px-1 font-medium text-amber-300">
+            Choose account
+          </span>
+        ) : null}
         {loading ? (
           <span className="animate-pulse text-content/35">···</span>
         ) : disconnected ? (
@@ -246,9 +259,12 @@ export function UsageProviderChip({
           <span className="text-content/35">{emptyUsageLabel(limits)}</span>
         ) : (
           <>
-            {accounts.length > 1 && activeAccount ? (
-              <span className="max-w-24 truncate text-content/45">
-                {activeAccount.label}
+            {accounts.length > 1 && !needsAccountChoice && activeAccount ? (
+              <span
+                className="max-w-40 truncate text-content/70"
+                title={activeSubtitle ?? undefined}
+              >
+                {accountDisplayName(activeAccount, activeIdentity)}
               </span>
             ) : null}
             {tightest ? <MiniBar usedPct={tightest.usedPercent} /> : null}
@@ -540,7 +556,9 @@ function ProviderAccountPicker({
             >
               <span className="min-w-0 flex-1 py-0.5">
                 <span className="flex min-w-0 items-baseline gap-1.5">
-                  <span className="shrink-0 truncate">{account.label}</span>
+                  <span className="shrink-0 truncate">
+                    {accountDisplayName(account, identity)}
+                  </span>
                   {subtitle ? (
                     <span
                       className="min-w-0 truncate text-[10px] text-content/35"
