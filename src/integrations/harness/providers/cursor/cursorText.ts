@@ -1,4 +1,5 @@
 import { AcpClient } from "../../core/acp";
+import { textModelSetting } from "../../../../features/providers/model/textGeneratorSettings";
 import {
   killChild,
   resolveCursorBinary,
@@ -127,7 +128,8 @@ async function ensureLive(
   requestedModel?: string,
   modelSettings?: Record<string, string>,
 ): Promise<LiveText> {
-  const model = requestedModel?.trim() || TEXT_MODEL;
+  const model =
+    requestedModel?.trim() || textModelSetting("cursor") || TEXT_MODEL;
   const settingsKey = modelSettingsKey(modelSettings);
   if (live && !live.closed) {
     if (

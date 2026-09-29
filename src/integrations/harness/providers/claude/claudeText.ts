@@ -30,6 +30,8 @@ import {
 import type { TurnIntent } from "../../../../features/sessions/model/session";
 import type { HarnessEvent } from "../../core/types";
 import { mergeStream } from "../../core/streamText";
+import { textProviderAccountId } from "../../core/textAccount";
+import { textModelSetting } from "../../../../features/providers/model/textGeneratorSettings";
 
 const TEXT_CHILD_ID = "monocode-claude-text";
 const INIT_TIMEOUT_MS = 8_000;
@@ -98,8 +100,13 @@ function textSettings(
   };
 }
 
+/** Model helper text uses when a caller does not choose one. */
+export function claudeTextModel(): string {
+  return pickTextModel();
+}
+
 function pickTextModel(requested?: string): string {
-  const selected = requested?.trim();
+  const selected = requested?.trim() || textModelSetting("claude");
   if (selected) return selected;
   const models = modelsFor("claude");
   const haiku = models.find((model) =>
@@ -233,6 +240,7 @@ async function ensureLive(
   requestedModel?: string,
   requestedSettings?: TextSettings,
 ): Promise<LiveText> {
+  providerAccountId ??= textProviderAccountId("claude", cwd);
   const model = pickTextModel(requestedModel);
   const settings = requestedSettings ?? textSettings(model);
   if (

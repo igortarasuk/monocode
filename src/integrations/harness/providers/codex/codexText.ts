@@ -19,6 +19,8 @@ import { JsonRpcClient, type JsonRpcId } from "../../core/jsonRpc";
 import type { TurnIntent } from "../../../../features/sessions/model/session";
 
 import { mergeStream, streamTextDelta } from "../../core/streamText";
+import { textProviderAccountId } from "../../core/textAccount";
+import { textModelSetting } from "../../../../features/providers/model/textGeneratorSettings";
 
 const TEXT_CHILD_ID = "monocode-codex-text";
 const INIT_TIMEOUT_MS = 60_000;
@@ -46,8 +48,13 @@ type LiveText = {
 let live: LiveText | null = null;
 let turns: Promise<void> = Promise.resolve();
 
+/** Model helper text uses when a caller does not choose one. */
+export function codexTextModel(): string {
+  return pickTextModel();
+}
+
 function pickTextModel(requested?: string): string {
-  const selected = requested?.trim();
+  const selected = requested?.trim() || textModelSetting("codex");
   if (selected) return selected;
   const models = modelsFor("codex");
   const luna = models.find((model) =>
@@ -216,6 +223,11 @@ async function ensureLive(input: {
   threadId?: string;
   onThreadId?: (threadId: string) => void;
 }): Promise<LiveText> {
+  input = {
+    ...input,
+    providerAccountId:
+      input.providerAccountId ?? textProviderAccountId("codex", input.cwd),
+  };
   const model = pickTextModel(input.model);
   const effort = pickTextEffort(model, input.modelSettings);
   const serviceTier = pickTextServiceTier(input.modelSettings);

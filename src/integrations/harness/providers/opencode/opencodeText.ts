@@ -1,4 +1,5 @@
 import { modelsFor } from "../../../../features/sessions/model/models";
+import { textModelSetting } from "../../../../features/providers/model/textGeneratorSettings";
 import type { TurnIntent } from "../../../../features/sessions/model/session";
 import {
   execChild,
@@ -365,11 +366,17 @@ async function dropLive(): Promise<void> {
   await killChild(TEXT_CHILD_ID).catch(() => undefined);
 }
 
+/** Model helper text uses when a caller does not choose one. */
+export function openCodeTextModel(): string {
+  const model = pickTextModel();
+  return `${model.providerID}/${model.modelID}`;
+}
+
 function pickTextModel(requested?: string): {
   providerID: string;
   modelID: string;
 } {
-  const selected = requested?.trim();
+  const selected = requested?.trim() || textModelSetting("opencode");
   if (selected) {
     const modelSlug = selected.startsWith("opencode:")
       ? selected.slice("opencode:".length)

@@ -1,5 +1,6 @@
 import type { HarnessId } from "../../../features/sessions/model/session";
 import { isHarnessAvailable } from "./availability";
+import { loadTextGeneratorSettings } from "../../../features/providers/model/textGeneratorSettings";
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import {
   generateHarnessCommitMessage,
@@ -7,7 +8,7 @@ import {
   warmupHarnessText,
 } from "./registry";
 
-const TEXT_HARNESSES: HarnessId[] = [
+export const TEXT_HARNESSES: HarnessId[] = [
   "claude",
   "cursor",
   "codex",
@@ -17,6 +18,8 @@ const TEXT_HARNESSES: HarnessId[] = [
 
 /** Pick the harness used for titles, commit messages, and PR text. */
 export function pickTextHarness(preferred?: HarnessId): HarnessId {
+  // A provider chosen in Settings wins over the active session's.
+  preferred = loadTextGeneratorSettings().harness ?? preferred;
   const ordered =
     preferred && TEXT_HARNESSES.includes(preferred)
       ? [preferred, ...TEXT_HARNESSES.filter((id) => id !== preferred)]

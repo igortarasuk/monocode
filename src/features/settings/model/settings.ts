@@ -358,6 +358,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "account sign in login rename remove delete credentials profile usage limit quota exhausted",
   },
   {
+    id: "text-generator",
+    section: "providers",
+    label: "Commit and PR text",
+    keywords: "commit message generate pull request title model provider account",
+  },
+  {
     id: "claude-hooks",
     section: "providers",
     label: "Claude Code hooks",
