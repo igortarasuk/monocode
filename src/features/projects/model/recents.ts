@@ -64,7 +64,8 @@ function save(next: RecentProject[]) {
 
 export function rememberProject(path: string): RecentProject[] {
   const normalized = normalize(path);
-  if (normalized === "~") return loadRecents();
+  if (normalized === "~" || isAssistantWorkspace(normalized))
+    return loadRecents();
   dropArchived(normalized);
   const prev = loadRecents().filter((p) => !sameProjectPath(p.path, normalized));
   const next = [{ path: normalized, openedAt: Date.now() }, ...prev].slice(
@@ -321,7 +322,11 @@ export function collectRailProjects(
     const path = normalize(item.path);
     map.set(pathKey(path), { path, openedAt: item.openedAt });
   }
-  if (currentCwd && looksLikeProject(currentCwd)) {
+  if (
+    currentCwd &&
+    looksLikeProject(currentCwd) &&
+    !isAssistantWorkspace(currentCwd)
+  ) {
     const path = normalize(currentCwd);
     const key = pathKey(path);
     if (!map.has(key)) {
@@ -387,6 +392,13 @@ export function projectRailItems(
     loadPinnedProjects(),
   );
   return [...pinned, ...unpinned];
+}
+
+/** Assistant chats run in `~/Assistants/<slug>`; those folders are not projects. */
+export const ASSISTANT_WORKSPACE_ROOT = "~/Assistants/";
+
+export function isAssistantWorkspace(path: string): boolean {
+  return !!path && prettyCwd(path).startsWith(ASSISTANT_WORKSPACE_ROOT);
 }
 
 /** True if this looks like a user project, not an app bundle or system root. */

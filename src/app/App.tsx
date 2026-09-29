@@ -558,6 +558,15 @@ import type { InboxSessionPortal } from "../features/inbox/ui/InboxDiscussionPan
 import { inboxAskKey, inboxAskPrompt } from "../features/inbox/model/inboxAsk";
 import { NotesView } from "../features/notes/ui";
 import { AutomationsView } from "../features/automations/ui/AutomationsView";
+import { AssistantsView } from "../features/assistants/ui/AssistantsView";
+import {
+  OPEN_ASSISTANTS_EVENT,
+  setAssistantsViewShown,
+} from "../features/assistants/model/assistantsNav";
+import {
+  prepareAssistantWorkspace,
+  type Assistant,
+} from "../features/assistants/model/assistants";
 import { CalendarView } from "../features/planning/ui/CalendarView";
 import {
   githubWorkItemThread,
@@ -968,6 +977,8 @@ export default function App({
   const openingInboxSessions = useRef(new Map<string, Promise<string>>());
   const [notesViewOpen, setNotesViewOpen] = useState(false);
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
+  // Assistants open in the Automations view slot; see assistantsNav.ts.
+  const [assistantsPane, setAssistantsPane] = useState(false);
   const [calendarViewOpen, setCalendarViewOpen] = useState(false);
   const [inspectedWorkerId, setInspectedWorkerId] = useState<string | null>(
     null,
@@ -9676,8 +9687,47 @@ export default function App({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(true);
+    setAssistantsPane(false);
     setCalendarViewOpen(false);
   }, []);
+
+  useEffect(() => {
+    const open = () => {
+      onOpenAutomations();
+      setAssistantsPane(true);
+    };
+    window.addEventListener(OPEN_ASSISTANTS_EVENT, open);
+    return () => window.removeEventListener(OPEN_ASSISTANTS_EVENT, open);
+  }, [onOpenAutomations]);
+  useEffect(() => {
+    setAssistantsViewShown(automationsViewOpen && assistantsPane);
+  }, [automationsViewOpen, assistantsPane]);
+
+  const startAssistantChat = useCallback(
+    async (assistant: Assistant) => {
+      const cwd = await prepareAssistantWorkspace(assistant);
+      setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
+      setSidebarTab("sessions", cwd);
+      const session = {
+        ...newSession(
+          assistant.harness,
+          cwd,
+          assistant.model || undefined,
+          assistant.runtimeMode,
+          assistant.modelSettings,
+        ),
+        title: assistant.name,
+        ...(assistant.skill ? { composerSeed: `/${assistant.skill} ` } : {}),
+      };
+      const tab = newTab(session.id);
+      setSessions((prev) => [...prev, session]);
+      appendTab(tab, cwd);
+      setActiveTabId(tab.id);
+      setComposerFocused(true);
+    },
+    [appendTab],
+  );
 
   const onOpenCalendar = useCallback(() => {
     setFilePickerOpen(false);
@@ -10865,7 +10915,17 @@ export default function App({
                   onToggleSidebar={onToggleSidebar}
                 />
               ) : null}
-              {automationsViewOpen ? (
+              {automationsViewOpen && assistantsPane ? (
+                <AssistantsView
+                  besideRail={projectRailOpen || compactProjectRail}
+                  compactRail={compactRailActive}
+                  history={history}
+                  onClose={onLeaveAutomations}
+                  onToggleSidebar={onToggleSidebar}
+                  onStartChat={startAssistantChat}
+                  onOpenSession={onOpenAutomationSession}
+                />
+              ) : automationsViewOpen ? (
                 <AutomationsView
                   besideRail={projectRailOpen || compactProjectRail}
                   compactRail={compactRailActive}

@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  replyNoteContent,
+  type ReplyNoteKind,
+} from "../../assistants/model/replyNotes";
 import { AgentTranscript } from "./AgentTranscript";
 import { TranscriptFind } from "./TranscriptFind";
 import {
@@ -74,7 +78,7 @@ export function AgentTabView({
     () => true,
   );
   const saveNote = useCallback(
-    async (text: string) => {
+    async (text: string, kind?: ReplyNoteKind) => {
       if (!session) return;
       const sessionTitle = sessionDisplayTitle(session.title, session.harness);
       await createNote({
@@ -82,7 +86,7 @@ export function AgentTabView({
           sessionTitle && sessionTitle !== "New session"
             ? sessionTitle
             : noteTitle(text),
-        body: text,
+        ...replyNoteContent(text, session.cwd, kind),
         sourceSessionId: session.id,
         sourceCwd: session.cwd,
       });

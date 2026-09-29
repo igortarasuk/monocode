@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 mod account_identity;
+mod assistants;
 mod automations;
 mod azure_devops;
 mod chat_background;
@@ -478,6 +479,7 @@ pub fn run() {
             session_store::session_take_in_flight,
             session_store::workspace_set_snapshot,
             session_store::workspace_get_snapshot,
+            assistants::assistant_workspace_prepare,
             notes::notes_list,
             notes::notes_get,
             notes::notes_upsert,
