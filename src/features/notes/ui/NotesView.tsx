@@ -1,4 +1,6 @@
-import { LoaderCircle, Plus, Search, File, Trash2, X } from "../../../shared/ui/icons";
+import { CheckCheck, LoaderCircle, Plus, Search, File, Trash2, X } from "../../../shared/ui/icons";
+import { TODO_TAG, toggleTodoLine } from "../model/todoNote";
+import { TodoCheckboxes } from "./TodoCheckboxes";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   Fragment,
@@ -116,6 +118,7 @@ export function NotesView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [todoOnly, setTodoOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(rememberedNoteId);
   const [creating, setCreating] = useState(false);
   const logos = useTabGroupLogos();
@@ -165,8 +168,11 @@ export function NotesView({
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return notes;
-    return notes.filter((note) => {
+    const scoped = todoOnly
+      ? notes.filter((note) => note.tags.includes(TODO_TAG))
+      : notes;
+    if (!needle) return scoped;
+    return scoped.filter((note) => {
       const project = noteSourceProject(note.sourceCwd)?.toLowerCase() ?? "";
       return (
         note.title.toLowerCase().includes(needle) ||
@@ -176,7 +182,7 @@ export function NotesView({
         project.includes(needle)
       );
     });
-  }, [notes, query]);
+  }, [notes, query, todoOnly]);
 
   const selected =
     visible.find((note) => note.id === selectedId) ??
@@ -249,6 +255,18 @@ export function NotesView({
             className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-content/40"
           />
         </div>
+        <button
+          type="button"
+          title="Show to-dos only"
+          aria-label="Show to-dos only"
+          aria-pressed={todoOnly}
+          onClick={() => setTodoOnly((value) => !value)}
+          className={`grid size-6 shrink-0 place-items-center rounded-md hover:bg-content/10 hover:text-content ${
+            todoOnly ? "bg-content/10 text-content" : "text-content/45"
+          }`}
+        >
+          <CheckCheck className="size-3.5" strokeWidth={1.75} />
+        </button>
         <button
           type="button"
           title="New note"
@@ -943,7 +961,15 @@ function NoteEditor({
               }}
             />
           ) : body.trim() ? (
-            <AgentMarkdown text={body} cwd={sourceCwd} />
+            <TodoCheckboxes
+              body={body}
+              onToggle={(line) => {
+                editNote({ body: toggleTodoLine(body, line) });
+                scheduleSave();
+              }}
+            >
+              <AgentMarkdown text={body} cwd={sourceCwd} />
+            </TodoCheckboxes>
           ) : (
             <p className="text-[13px] text-content/45">No description</p>
           )}
