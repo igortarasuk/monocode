@@ -12,7 +12,6 @@ import {
   groupTurnItems,
   groupTurns,
   hasRunningSubagent,
-  initialThinkingIndex,
   lastActivityIndex,
   nestedScrollAbsorbsWheel,
   proseSummary,
@@ -276,7 +275,7 @@ describe("groupTurnItems", () => {
     ]);
   });
 
-  it("replaces leading reasoning with the first assistant prose", () => {
+  it("keeps leading reasoning as its own group before the first prose", () => {
     const items = groupTurnItems([
       { id: "u", role: "user", text: "Investigate it" },
       thought("r1", "I should inspect the current changes."),
@@ -287,25 +286,10 @@ describe("groupTurnItems", () => {
 
     expect(items).toMatchObject([
       { type: "block", block: { id: "u" } },
+      { type: "activity", blocks: [{ id: "r1" }, { id: "r2" }] },
       { type: "block", block: { id: "a1" } },
       { type: "activity", blocks: [{ id: "t1" }] },
     ]);
-  });
-
-  it("identifies leading reasoning while the first prose is pending", () => {
-    const thinking = groupTurnItems([
-      { id: "u", role: "user", text: "Investigate it" },
-      thought("r1"),
-      thought("r2"),
-    ]);
-    expect(initialThinkingIndex(thinking)).toBe(1);
-
-    const toolActivity = groupTurnItems([
-      { id: "u", role: "user", text: "Investigate it" },
-      thought("r1"),
-      read("t1"),
-    ]);
-    expect(initialThinkingIndex(toolActivity)).toBe(-1);
   });
 });
 
@@ -843,11 +827,7 @@ describe("the settled work trail", () => {
     const items = groupTurnItems(turn, { settled: true });
     expect(items).toHaveLength(1);
     if (items[0]?.type !== "activity") throw new Error("expected activity");
-    expect(items[0].blocks.map((block) => block.id)).toEqual([
-      "a",
-      "ag",
-      "b",
-    ]);
+    expect(items[0].blocks.map((block) => block.id)).toEqual(["a", "ag", "b"]);
     expect(workSummaryLine(items[0].blocks)).toBe(
       "Ran 2 commands · Ran a subagent",
     );
@@ -1352,13 +1332,21 @@ describe("resolveToolCallDisplay", () => {
       path: "/Users/dev/project/src/App.tsx",
       fileName: "App.tsx",
     };
-    const result = resolveToolCallDisplay("Read", preview, "/Users/dev/project");
+    const result = resolveToolCallDisplay(
+      "Read",
+      preview,
+      "/Users/dev/project",
+    );
     expect(result.target).toBe("src/App.tsx");
     expect(result.filePath).toBe("/Users/dev/project/src/App.tsx");
   });
 
   it("falls back to the raw label when there is no recognisable action", () => {
-    const result = resolveToolCallDisplay("Thinking", undefined, "/Users/dev/project");
+    const result = resolveToolCallDisplay(
+      "Thinking",
+      undefined,
+      "/Users/dev/project",
+    );
     expect(result.action).toBeUndefined();
     expect(result.target).toBeUndefined();
   });
@@ -1396,7 +1384,11 @@ describe("resolveToolCallDisplay", () => {
       path: "/Users/dev/project/src/App.tsx",
       fileName: "App.tsx",
     };
-    const result = resolveToolCallDisplay("Write", preview, "/Users/dev/project");
+    const result = resolveToolCallDisplay(
+      "Write",
+      preview,
+      "/Users/dev/project",
+    );
     expect(result.previewMatchesFile).toBe(true);
   });
 
