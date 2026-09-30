@@ -1,18 +1,18 @@
 <p align="center">
-  <img src="public/monocode.png" alt="Monochrome" width="88" />
+  <img src="docs/monochrome/logo.png" alt="Monochrome" width="88" />
 </p>
 
 <h1 align="center">Monochrome</h1>
 
 <p align="center">
-  <strong>A personal fork of <a href="https://github.com/hardbeat920/monocode">MonoCode</a>, tuned for Linux and GitLab-based work.</strong>
+  <strong>A personal fork of MonoCode, tuned for Linux and GitLab-based work.</strong>
 </p>
 
 <p align="center">
   <img src="docs/monochrome/window.png" alt="Monochrome main window with the GitLab pipeline in the footer" width="900" />
 </p>
 
-MonoCode is a desktop app that runs the coding agents you already pay for (Claude Code, Codex, Cursor and others) in tabs. Monochrome is the same app with the changes below. It follows upstream closely and pulls its updates regularly; for everything not listed here, the [upstream README](https://github.com/hardbeat920/monocode#readme) applies.
+MonoCode is a desktop app that runs the coding agents you already pay for (Claude Code, Codex, Cursor and others) in tabs. Monochrome is the same app with the changes below. It follows upstream closely and pulls its updates regularly.
 
 ## What is different
 
