@@ -15,9 +15,30 @@ permissions:
 jobs:
   linux:
     name: deb and AppImage
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    # Build inside Ubuntu 22.04 so the packages need only glibc 2.35 and run on
+    # older distributions; the ubuntu-22.04 runner image itself is retired.
+    container: ubuntu:22.04
+    defaults:
+      run:
+        shell: bash
+    env:
+      # No FUSE in containers; linuxdeploy's AppImage must unpack itself.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
+      - name: Install git and certificates
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates
+
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
       - name: Check tag matches app version
         run: |
@@ -26,11 +47,6 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match v$VERSION" >&2
             exit 1
           fi
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
 
