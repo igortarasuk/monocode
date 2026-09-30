@@ -51,5 +51,5 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" "${FILES[@]}" \
               --title "Monochrome Host ${GITHUB_REF_NAME#host-v}" \
-              --notes "MonoCode Host packages for Monochrome SSH machines."
+              --notes "Monochrome Host packages for SSH machines."
           fi
