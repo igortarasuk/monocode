@@ -68,6 +68,7 @@ export type HostSessionSummary = Omit<
   cwd?: string;
   model?: string;
   runtimeMode?: RuntimeMode;
+  providerSessionId?: string | null;
   createdAt?: number;
   linkedWorkItem?: LinkedWorkItem;
   needsInput?: boolean;

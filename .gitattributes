@@ -1,1 +1,3 @@
 README.md merge=ours
+# Shell scripts are also embedded in the desktop app and sent to Unix hosts.
+*.sh text eol=lf

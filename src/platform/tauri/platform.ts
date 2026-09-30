@@ -8,7 +8,7 @@ export const IS_WIN =
 export const IS_LINUX =
   typeof navigator !== "undefined" && /Linux/i.test(navigator.platform);
 
-/** macOS vibrancy, Windows acrylic; Linux: alpha only, blur is the compositor's. */
+/** Native desktop blur on macOS/Windows; transparency-only glass on Linux. */
 export const HAS_NATIVE_GLASS = IS_MAC || IS_WIN || IS_LINUX;
 
 export const MOD = IS_MAC ? "⌘" : "Ctrl+";
