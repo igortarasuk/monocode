@@ -281,6 +281,8 @@ export function buildClaudeSpawnArgs(input: {
     args.push("--settings", JSON.stringify(settings));
     // Claude streams thinking as empty deltas unless asked for summaries.
     args.push("--thinking-display", "summarized");
+    // Echo user messages so ones sent through Remote Control reach the app.
+    args.push("--replay-user-messages");
   }
   if (input.model) args.push("--model", input.model);
   if (input.effort) args.push("--effort", input.effort);
@@ -294,6 +296,34 @@ export function buildClaudeSpawnArgs(input: {
   if (input.sessionId) args.push("--session-id", input.sessionId);
   if (input.maxTurns) args.push("--max-turns", String(input.maxTurns));
   return args;
+}
+
+/**
+ * A user message Claude echoed back (`--replay-user-messages`): the app's own,
+ * recognised by uuid, or one sent from elsewhere through Remote Control.
+ */
+export function replayedUserMessage(
+  rec: Record<string, unknown>,
+): { uuid?: string; text: string } | null {
+  if (stringField(rec, "type") !== "user" || rec.isReplay !== true) {
+    return null;
+  }
+  const content = asRecord(rec.message)?.content;
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .map((block) => {
+              const row = asRecord(block);
+              return stringField(row, "type") === "text"
+                ? (stringField(row, "text") ?? "")
+                : "";
+            })
+            .filter(Boolean)
+            .join("\n\n")
+        : "";
+  return { uuid: stringField(rec, "uuid"), text };
 }
 
 export function buildControlRequest(

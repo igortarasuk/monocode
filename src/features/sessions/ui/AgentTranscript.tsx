@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CircleDashed,
   Copy,
+  ExternalLink,
   FilePlusCorner,
   Minus,
   Pencil,
@@ -18,6 +19,7 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import type { ReplyNoteKind } from "../../assistants/model/replyNotes";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   memo,
   startTransition,
@@ -1549,6 +1551,11 @@ const TranscriptBlock = memo(function TranscriptBlock({
     if (block.interjection) {
       return <InterjectionDivider block={block} />;
     }
+    if (block.remoteControl) {
+      return (
+        <RemoteControlNotice url={block.remoteControl.url} embedded={embedded} />
+      );
+    }
     return (
       <div className={`${embedded ? "" : "px-4"} py-2 text-content/50`}>
         <pre className="min-w-0 whitespace-pre-wrap break-words">
@@ -1574,6 +1581,53 @@ const TranscriptBlock = memo(function TranscriptBlock({
     </div>
   );
 });
+
+/** Where to continue this chat from a phone while Remote Control is on. */
+function RemoteControlNotice({
+  url,
+  embedded = false,
+}: {
+  url?: string;
+  embedded?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  if (!url) {
+    return (
+      <div className={`${embedded ? "" : "px-4"} py-2 text-sm text-content/50`}>
+        Remote Control is off
+      </div>
+    );
+  }
+  const button =
+    "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-content/60 transition-colors hover:bg-content/8 hover:text-content";
+  return (
+    <div
+      className={`${embedded ? "" : "px-4"} flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm text-content/60`}
+    >
+      <span className="min-w-0">
+        Remote Control is on — continue this chat in the Claude app or at
+        claude.ai/code
+      </span>
+      <button type="button" className={button} onClick={() => void openUrl(url)}>
+        <ExternalLink className="size-3.5" />
+        Open
+      </button>
+      <button
+        type="button"
+        className={button}
+        onClick={() => {
+          void copyMessage(url).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+      >
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        {copied ? "Copied" : "Copy link"}
+      </button>
+    </div>
+  );
+}
 
 function UserMessageBlock({
   block,

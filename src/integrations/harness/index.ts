@@ -191,7 +191,11 @@ export {
   canRunHarnessTextPrompt,
   runHarnessTextPrompt,
   stopHarnessTextPrompts,
+  supportsRemoteControl,
+  isHarnessRemoteControlled,
+  setHarnessRemoteControl,
 } from "./core/registry";
+export { onRemoteTurn, type RemoteTurn } from "./core/remoteTurns";
 export type {
   ApprovalDecision,
   CompactContextInput,

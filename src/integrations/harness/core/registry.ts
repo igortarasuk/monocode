@@ -17,6 +17,7 @@ import type {
   ApprovalDecision,
   CompactContextInput,
   HarnessEvent,
+  RemoteControlInput,
   RewindLastTurnInput,
   RewindLastTurnResult,
   SendTurnInput,
@@ -88,6 +89,13 @@ export type HarnessAdapter = {
   ): void;
   /** Seed provider task state from a restored session's persisted panels. */
   restoreTaskLists?(threadId: string, lists: TaskListMeta[]): void;
+  /**
+   * Let the session be driven from elsewhere (Claude's Remote Control).
+   * Resolves to the page for it when enabled, or null.
+   */
+  setRemoteControl?(input: RemoteControlInput): Promise<string | null>;
+  /** True while the session is reachable through Remote Control. */
+  isRemoteControlled?(sessionId: string): boolean;
   /** Refresh the model catalog overlay when supported. */
   refreshCatalog?(): Promise<void>;
   /** Optional LLM tab title for the first turn. */
@@ -178,6 +186,11 @@ function scheduleIdlePark(harness: HarnessId, sessionId: string): void {
     sessionId,
     setTimeout(() => {
       idleParkTimers.delete(sessionId);
+      // Parking would drop the Remote Control connection with the child.
+      if (adapters.get(harness)?.isRemoteControlled?.(sessionId)) {
+        scheduleIdlePark(harness, sessionId);
+        return;
+      }
       void stopHarnessSession(harness, sessionId);
     }, HARNESS_IDLE_PARK_MS),
   );
@@ -237,6 +250,36 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
       scheduleIdlePark(input.harness, input.sessionId);
     }
   });
+}
+
+export function supportsRemoteControl(id: HarnessId): boolean {
+  const adapter = adapters.get(id);
+  return adapter?.live === true && adapter.setRemoteControl != null;
+}
+
+export function isHarnessRemoteControlled(
+  id: HarnessId,
+  sessionId: string,
+): boolean {
+  return adapters.get(id)?.isRemoteControlled?.(sessionId) === true;
+}
+
+/** Not queued behind turns: it can be switched while the agent works. */
+export async function setHarnessRemoteControl(
+  input: RemoteControlInput & { harness: HarnessId },
+): Promise<string | null> {
+  const adapter = requireHarness(input.harness);
+  if (!adapter.live || !adapter.setRemoteControl) {
+    throw new Error(`${input.harness} does not support Remote Control`);
+  }
+  cancelIdlePark(input.sessionId);
+  try {
+    return await adapter.setRemoteControl(input);
+  } finally {
+    if (!activeTurnSessions.has(input.sessionId)) {
+      scheduleIdlePark(input.harness, input.sessionId);
+    }
+  }
 }
 
 export function canCompactHarnessContext(id: HarnessId): boolean {

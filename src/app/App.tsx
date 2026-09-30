@@ -256,6 +256,10 @@ import {
   stopHarnessTextPrompts,
   stopStreaming,
   pickTextHarness,
+  supportsRemoteControl,
+  isHarnessRemoteControlled,
+  setHarnessRemoteControl,
+  onRemoteTurn,
   type ApprovalDecision,
   type HarnessEvent,
   type UserQuestionReply,
@@ -497,6 +501,10 @@ import {
   operatorEnabledInThread,
 } from "../features/sessions/model/operatorCommand";
 import {
+  parseRemoteControlCommand,
+  type RemoteControlRequest,
+} from "../features/sessions/model/remoteControlCommand";
+import {
   warmNativeSkills,
   isNativeCommandPrompt,
 } from "../features/skills/model/skills";
@@ -730,6 +738,8 @@ type SubmitOptions = ComposerTurnOptions & {
   refreshTitle?: boolean;
   /** Internal guard for the retry after resolving a renamed project. */
   projectLocationReady?: boolean;
+  /** Show and join a turn sent through Remote Control; the provider has it. */
+  remoteTurn?: boolean;
 };
 
 type Submit = (
@@ -5886,6 +5896,54 @@ export default function App({
     [invalidateLoadedSession],
   );
 
+  const setRemoteControl = useCallback(
+    (sessionId: string, request: RemoteControlRequest): boolean => {
+      const current = sessionsRef.current.find((s) => s.id === sessionId);
+      if (!current || current.worktreeRemoved) return false;
+      const report = (event: HarnessEvent) =>
+        enqueueHarnessEvent(sessionId, event);
+      if (!supportsRemoteControl(current.harness)) {
+        report({
+          type: "status",
+          text: `${HARNESS_TITLE[current.harness]} does not support Remote Control.`,
+        });
+        return true;
+      }
+      const enabled =
+        request === "toggle"
+          ? !isHarnessRemoteControlled(current.harness, sessionId)
+          : request === "on";
+      report({
+        type: "status",
+        text: enabled ? "Starting Remote Control…" : "Stopping Remote Control…",
+      });
+      void setHarnessRemoteControl({
+        harness: current.harness,
+        sessionId,
+        cwd: sessionWorkCwd(current),
+        model: current.model,
+        modelSettings: current.modelSettings,
+        providerAccountId: supportsProviderAccounts(current.harness)
+          ? (current.providerAccountId ??
+            selectedProviderAccountId(current.harness, current.cwd))
+          : undefined,
+        runtimeMode: current.runtimeMode,
+        enabled,
+        name: current.title,
+        onEvent: report,
+      }).catch((error: unknown) =>
+        report({
+          type: "session.error",
+          message: `Remote Control failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }),
+      );
+      return true;
+    },
+    [enqueueHarnessEvent],
+  );
+
   const submitSession = useCallback(
     (
       sessionId: string,
@@ -5896,6 +5954,11 @@ export default function App({
       const remote = sessionsRef.current.find((session) => session.id === sessionId);
       if (remote && remoteProjectFor(remote.cwd))
         return !!remoteSessionActions(sessionId)?.submit(text, attachments, options);
+      const remoteControl = options?.remoteTurn
+        ? null
+        : parseRemoteControlCommand(text);
+      if (remoteControl && attachments.length === 0)
+        return setRemoteControl(sessionId, remoteControl);
       if (editedResends.isActive(sessionId)) return false;
       const controlError = orchestrator.submissionError(
         sessionId,
@@ -6080,6 +6143,16 @@ export default function App({
           : null;
 
       if (current.busy && !pendingSwitch) {
+        if (options?.remoteTurn) {
+          // Claude already has the message; queueing it would send it again.
+          enqueueHarnessEvent(sessionId, {
+            type: "interjection",
+            text,
+            customType: "Remote Control",
+          });
+          flushHarnessEvents();
+          return false;
+        }
         if (
           operatorCommand.matched &&
           options?.queuedMessageId &&
@@ -6836,6 +6909,7 @@ export default function App({
               text,
               attachments: turnAttachments,
               ...(editedResend ? { onAccepted: acceptEditedResend } : {}),
+              ...(options?.remoteTurn ? { remoteTurn: true } : {}),
               onEvent: routeTurnEvent,
             });
           let sendText = orchestrator.prompt(
@@ -7041,6 +7115,23 @@ export default function App({
   );
   const queuedReports = useRef(new Map<string, string[]>());
   /** Open a terminal running `command`; its exit status goes to the session. */
+  // Messages sent through Remote Control open a turn here like typed ones.
+  useEffect(
+    () =>
+      onRemoteTurn((turn) => {
+        const session = sessionsRef.current.find(
+          (entry) => entry.id === turn.sessionId,
+        );
+        if (!session || session.harness !== turn.harness) return;
+        submitSession(turn.sessionId, turn.text, [], {
+          remoteTurn: true,
+          noteCard: undefined,
+          handoffCard: undefined,
+        });
+      }),
+    [submitSession],
+  );
+
   const runReportedCommand = useCallback(
     (cwd: string, command: string, sessionId?: string) => {
       if (!sessionId) return openProjectTerminal(cwd, command);
