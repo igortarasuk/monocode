@@ -26,10 +26,10 @@ jobs:
       # No FUSE in containers; linuxdeploy's AppImage must unpack itself.
       APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
-      - name: Install git and certificates
+      - name: Install git, certificates and xdg-utils
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates xdg-utils
 
       - uses: actions/checkout@v4
         with:
