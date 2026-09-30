@@ -312,8 +312,9 @@ fn send(action: &str, input: &Value, request_id: &str, app_mode: bool) -> Result
             "No Monochrome connection. Confirm the Orchestrator proposal in Monochrome first."
         })
     })?;
-    let token = std::env::var(token_key)
-        .map_err(|_| unsent("No Monochrome session credential. Start the agent from Monochrome."))?;
+    let token = std::env::var(token_key).map_err(|_| {
+        unsent("No Monochrome session credential. Start the agent from Monochrome.")
+    })?;
     let address: SocketAddr = endpoint
         .parse()
         .map_err(|_| unsent("Invalid Monochrome endpoint"))?;
