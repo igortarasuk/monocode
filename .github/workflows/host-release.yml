@@ -29,16 +29,20 @@ jobs:
           fi
       - run: npm ci
       - run: npm run test:host
-      - run: npm run host:package -- --all
+      - name: Package Linux hosts
+        run: |
+          npm run host:build
+          node host/package.mjs --target linux-x64
+          node host/package.mjs --target linux-arm64
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          ARCHIVES=(build/host-packages/*.tar.gz build/host-packages/*.zip)
-          if (( ${#ARCHIVES[@]} != 6 )); then
-            echo "Expected six host archives" >&2
+          ARCHIVES=(build/host-packages/*.tar.gz)
+          if (( ${#ARCHIVES[@]} != 2 )); then
+            echo "Expected two Linux host archives" >&2
             exit 1
           fi
           FILES=()
@@ -51,5 +55,5 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" "${FILES[@]}" \
               --title "Monochrome Host ${GITHUB_REF_NAME#host-v}" \
-              --notes "Monochrome Host packages for SSH machines."
+              --notes "Monochrome Host packages for Linux SSH machines."
           fi

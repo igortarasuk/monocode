@@ -1,5 +1,7 @@
 README.md merge=ours
 # Shell scripts are also embedded in the desktop app and sent to Unix hosts.
 *.sh text eol=lf
-# Our Linux-only release workflow replaces upstream's signed multi-platform one.
+# Our Linux-only workflows replace upstream's multi-platform ones.
 .github/workflows/release.yml merge=ours
+.github/workflows/ci.yml merge=ours
+.github/workflows/host-release.yml merge=ours
