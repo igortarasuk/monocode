@@ -515,7 +515,7 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         QUICK_COMPOSER_LABEL,
         WebviewUrl::App("quick-composer.html".into()),
     )
-    .title("MonoCode")
+    .title("Monochrome")
     .inner_size(WIDTH, INITIAL_HEIGHT)
     .resizable(false)
     .maximizable(false)

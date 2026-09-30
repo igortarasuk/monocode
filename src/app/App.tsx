@@ -6064,7 +6064,7 @@ export default function App({
         operatorCommand.matched || operatorEnabledInThread(current.blocks);
       const promptText = operatorCommand.matched
         ? operatorCommand.text.trim() ||
-          "Explain what you can do in MonoCode with the app CLI."
+          "Explain what you can do in Monochrome with the app CLI."
         : submittedText;
       const rawCommand =
         !operatorCommand.matched &&
@@ -9142,7 +9142,7 @@ export default function App({
           source.orchestrationLeadId ||
           orchestrator.run(source.id)
         )
-          throw new Error("This session cannot use the MonoCode app CLI");
+          throw new Error("This session cannot use the Monochrome app CLI");
         const key = `${source.id}:${payload.requestId}`;
         const signature = JSON.stringify([payload.action, payload.input]);
         const previous = appReceipts.current.get(key);

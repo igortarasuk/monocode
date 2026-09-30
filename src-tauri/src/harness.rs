@@ -1061,7 +1061,7 @@ pub fn provider_account_set_config_dir(
             .canonicalize()
             .unwrap_or(accounts_root.to_path_buf());
         if target.starts_with(&accounts_root) {
-            return Err("Choose a directory outside MonoCode's own profiles".into());
+            return Err("Choose a directory outside Monochrome's own profiles".into());
         }
     }
     host.kill_account(&provider, &account_id);

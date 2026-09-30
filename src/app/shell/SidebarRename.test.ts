@@ -494,13 +494,13 @@ describe("sidebar session IDs", () => {
     const monocodeMenu = openCopyIdMenu("session-2");
     const copyMonoCodeId = Array.from(
       monocodeMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "MonoCode session ID")!;
+    ).find((item) => item.textContent === "Monochrome session ID")!;
     expect(copyMonoCodeId.disabled).toBe(false);
     await act(async () => copyMonoCodeId.click());
     expect(copyText).toHaveBeenNthCalledWith(2, "session-2");
   });
 
-  it("keeps the MonoCode ID available before the harness supplies an ID", async () => {
+  it("keeps the Monochrome ID available before the harness supplies an ID", async () => {
     act(() => render());
     const copyMenu = openCopyIdMenu("session-1");
     const copyHarnessId = Array.from(
@@ -508,7 +508,7 @@ describe("sidebar session IDs", () => {
     ).find((item) => item.textContent === "Harness session ID")!;
     const copyMonoCodeId = Array.from(
       copyMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "MonoCode session ID")!;
+    ).find((item) => item.textContent === "Monochrome session ID")!;
     expect(copyHarnessId.disabled).toBe(true);
     expect(copyMonoCodeId.disabled).toBe(false);
     await act(async () => copyMonoCodeId.click());
