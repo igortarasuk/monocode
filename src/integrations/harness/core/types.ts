@@ -22,6 +22,8 @@ export type HarnessEvent =
       modelSettings?: Record<string, string>;
     }
   | { type: "status"; text: string }
+  /** Remote Control turned on (with the page to open) or off. */
+  | { type: "remoteControl"; url?: string }
   /** The provider refused the turn until its usage window resets (epoch ms). */
   | { type: "usage.limited"; resetsAt?: number }
   /**
@@ -178,6 +180,17 @@ export type SendTurnInput = HarnessSessionInput & {
   attachments?: Attachment[];
   /** Called once the provider has accepted the user turn. */
   onAccepted?: () => void;
+  /**
+   * Join a turn the provider already started from Remote Control instead of
+   * sending `text`, which is only what the app shows for it.
+   */
+  remoteTurn?: boolean;
+};
+
+export type RemoteControlInput = HarnessSessionInput & {
+  enabled: boolean;
+  /** Session name shown on claude.ai/code. */
+  name?: string;
 };
 
 export type CompactContextInput = HarnessSessionInput;

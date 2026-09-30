@@ -187,6 +187,15 @@ export function applyHarnessEvent(
       };
     case "status":
       return appendStatus(session, event.text);
+    case "remoteControl":
+      return appendBlock(session, {
+        id: crypto.randomUUID(),
+        role: "system",
+        text: event.url
+          ? `Remote Control is on: ${event.url}`
+          : "Remote Control is off",
+        remoteControl: event.url ? { url: event.url } : {},
+      });
     case "usage.limited":
       return {
         ...session,

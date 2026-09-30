@@ -178,6 +178,8 @@ import {
   supportsBtwHarness,
 } from "../model/btw";
 import { COMPACT_COMMAND, isCompactCommand } from "../model/compact";
+import { REMOTE_CONTROL_COMMAND } from "../model/remoteControlCommand";
+import { supportsRemoteControl } from "../../../integrations/harness/core/registry";
 import {
   consumeSessionFolderCommand,
   isSessionFolderCommand,
@@ -721,11 +723,16 @@ export function Composer({
             ...(canSaveDraft && onSaveDraft ? [DRAFT_COMMAND] : []),
             COMPACT_COMMAND,
             ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
+            ...(supportsRemoteControl(harness) ? [REMOTE_CONTROL_COMMAND] : []),
             ...skills.filter(
               (skill) =>
-                ![OPERATOR_COMMAND.name, "mono", "monocode"].includes(
-                  skill.name,
-                ) &&
+                ![
+                  OPERATOR_COMMAND.name,
+                  "mono",
+                  "monocode",
+                  REMOTE_CONTROL_COMMAND.name,
+                  "remote-control",
+                ].includes(skill.name) &&
                 (skill.kind === "native" ||
                   (skill.name !== PLAN_COMMAND.name &&
                     skill.name !== COMPACT_COMMAND.name &&

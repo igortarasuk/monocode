@@ -42,9 +42,12 @@ const {
   respondClaudeQuestion,
   restoreClaudeTaskLists,
   sendClaudeTurn,
+  setClaudeRemoteControl,
+  isClaudeRemoteControlled,
   stopClaudeSession,
   __claudeTestReset,
 } = await import("./claude");
+const { onRemoteTurn } = await import("../../core/remoteTurns");
 import type { HarnessEvent } from "../../core/types";
 import type { RuntimeMode, TurnIntent } from "../../../../features/sessions/model/session";
 
@@ -1973,5 +1976,93 @@ describe("claude manual compaction", () => {
       text: "Compacted context",
     });
     expect(events.some((event) => event.type === "message.delta")).toBe(false);
+  });
+});
+
+describe("Remote Control", () => {
+  it("echoes are only the app's own when their uuid matches", async () => {
+    const { events, turn } = await startTurn("s1");
+    const prompt = parse().find((m) => m.type === "user")!;
+    expect(typeof prompt.uuid).toBe("string");
+    emit({ type: "user", isReplay: true, uuid: prompt.uuid, message: { role: "user", content: "explore the codebase" } });
+    emit({ type: "user", isReplay: true, uuid: "phone-1", origin: { kind: "human" }, message: { role: "user", content: "also check tests" } });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    const interjections = events.filter((event) => event.type === "interjection");
+    expect(interjections).toEqual([
+      { type: "interjection", text: "also check tests", customType: "Remote Control" },
+    ]);
+  });
+
+  it("asks the app to open a turn for a message sent from the phone", async () => {
+    const { turn } = await startTurn("s1");
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+
+    const announced: string[] = [];
+    const stop = onRemoteTurn((remote) => announced.push(`${remote.sessionId}:${remote.text}`));
+    try {
+      emit({ type: "user", isReplay: true, uuid: "phone-2", origin: { kind: "human" }, message: { role: "user", content: [{ type: "text", text: "Hi" }] } });
+      emitFollowUpTurn("Hello from Claude");
+      expect(announced).toEqual(["s1:Hi"]);
+
+      const events: HarnessEvent[] = [];
+      await sendClaudeTurn({
+        sessionId: "s1",
+        cwd: "/repo",
+        model: "claude:claude-sonnet-5",
+        modelSettings: {},
+        runtimeMode: "supervised",
+        text: "Hi",
+        remoteTurn: true,
+        onEvent: (event) => events.push(event),
+      });
+      expect(events).toContainEqual({ type: "message.delta", text: "Hello from Claude" });
+      // Joining must not send the phone's message to Claude a second time.
+      expect(parse().filter((m) => m.type === "user")).toHaveLength(1);
+    } finally {
+      stop();
+    }
+  });
+
+  it("turns Remote Control on and reports its page", async () => {
+    const { turn } = await startTurn("s1");
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+
+    const sink: HarnessEvent[] = [];
+    const enabling = setClaudeRemoteControl({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      enabled: true,
+      name: "My task",
+      onEvent: (event) => sink.push(event),
+    });
+    await waitFor(
+      () => parse().some((m) => (m.request as Record<string, unknown> | undefined)?.subtype === "remote_control"),
+      "remote_control request",
+    );
+    const request = parse().find(
+      (m) => (m.request as Record<string, unknown> | undefined)?.subtype === "remote_control",
+    )!;
+    expect(request.request).toEqual({ subtype: "remote_control", enabled: true, name: "My task" });
+    emit({
+      type: "control_response",
+      response: {
+        subtype: "success",
+        request_id: request.request_id,
+        response: { session_url: "https://claude.ai/code/session_1" },
+      },
+    });
+    await expect(enabling).resolves.toBe("https://claude.ai/code/session_1");
+    expect(sink).toEqual([{ type: "remoteControl", url: "https://claude.ai/code/session_1" }]);
+    expect(isClaudeRemoteControlled("s1")).toBe(true);
+
+    onExit!(0);
+    expect(isClaudeRemoteControlled("s1")).toBe(false);
+    expect(sink.at(-1)).toEqual({ type: "remoteControl" });
   });
 });

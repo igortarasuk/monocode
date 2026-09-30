@@ -352,6 +352,8 @@ export type Block = {
    * rather than turn chrome like a status ping. Never folds into the trail.
    */
   notice?: "error" | "interrupt";
+  /** Remote Control switched on (with its page) or off; system blocks only. */
+  remoteControl?: { url?: string };
 };
 
 export type RuntimeMode =

@@ -14,6 +14,7 @@ import {
   watchChild,
   writeChild,
 } from "../../core/child";
+import { announceRemoteTurn } from "../../core/remoteTurns";
 import {
   askUserQuestionAllowInput,
   asRecord,
@@ -28,6 +29,8 @@ import {
   buildClaudeUserMessage,
   buildControlRequest,
   buildControlResponse,
+  parseControlResponse,
+  replayedUserMessage,
   claudeSettingsKey,
   extractAskUserQuestionTitle,
   extractExitPlanModePlan,
@@ -82,6 +85,7 @@ import type {
   CompactContextInput,
   HarnessEvent,
   HarnessSessionInput,
+  RemoteControlInput,
   SendTurnInput,
   SteerTurnInput,
 } from "../../core/types";
@@ -174,6 +178,23 @@ type Live = {
   pendingAssistantBoundary: boolean;
   manualCompaction: boolean;
   compactionConfirmed: boolean;
+  /** Uuids of user messages the app wrote, to tell their echoes apart. */
+  sentUuids: Set<string>;
+  /** Control requests awaiting Claude's answer, by request id. */
+  controlWaiters: Map<
+    string,
+    {
+      resolve: (response: Record<string, unknown> | undefined) => void;
+      reject: (error: Error) => void;
+    }
+  >;
+  /** Page for the Remote Control session while it is on. */
+  remoteControlUrl: string | null;
+  /**
+   * A turn started through Remote Control, buffering its events until the app
+   * opens a turn for it and joins with `sendTurn({ remoteTurn: true })`.
+   */
+  remoteTurn: { events: HarnessEvent[]; done: Promise<void> } | null;
 };
 
 type Resume = {
@@ -203,6 +224,15 @@ const tasksByThread = new Map<
 /** Task-list block key for TaskCreate/TaskUpdate items. */
 const CLAUDE_TASKS_KEY = "claude-tasks";
 const cancelledThreads = new Set<string>();
+/**
+ * Threads the user put on Remote Control. A restarted child (new model or
+ * settings) turns it back on; the sink hears about the connection either way.
+ */
+const remoteControlByThread = new Map<
+  string,
+  { name?: string; sink: (event: HarnessEvent) => void }
+>();
+const CONTROL_TIMEOUT_MS = 20_000;
 
 let resolveClaudeBinaryImpl: () => Promise<{ path: string }> =
   resolveClaudeBinary;
@@ -215,6 +245,7 @@ export function setClaudeBinaryResolver(
 }
 
 export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
+  if (input.remoteTurn) return joinRemoteTurn(input);
   let live: Live;
   try {
     live = await ensureLive(input);
@@ -292,7 +323,7 @@ export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   const content = (message.message as { content: unknown[] }).content;
   if (content.length === 0) return;
 
-  await writeJson(input.sessionId, message);
+  await writeUserMessage(input.sessionId, live, message);
 }
 
 export function respondClaudeApproval(
@@ -356,6 +387,7 @@ export async function stopClaudeSession(sessionId: string): Promise<void> {
   const live = liveByThread.get(sessionId);
   liveByThread.delete(sessionId);
   if (live) {
+    dropRemoteControl(sessionId, live);
     live.muteUpdates = true;
     for (const [, pending] of live.approvals) pending.resolve("deny");
     live.approvals.clear();
@@ -374,6 +406,7 @@ export async function stopClaudeSession(sessionId: string): Promise<void> {
 }
 
 export async function forgetClaudeSession(sessionId: string): Promise<void> {
+  remoteControlByThread.delete(sessionId);
   resumeByThread.delete(sessionId);
   tasksByThread.delete(sessionId);
   await stopClaudeSession(sessionId);
@@ -511,6 +544,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     pendingAssistantBoundary: false,
     manualCompaction: false,
     compactionConfirmed: false,
+    sentUuids: new Set(),
+    controlWaiters: new Map(),
+    remoteControlUrl: null,
+    remoteTurn: null,
   };
   liveRef.current = live;
 
@@ -522,8 +559,11 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       handleLine(input.sessionId, current, line);
     },
     (code) => {
-      liveByThread.delete(input.sessionId);
+      if (liveByThread.get(input.sessionId) === liveRef.current) {
+        liveByThread.delete(input.sessionId);
+      }
       const current = liveRef.current;
+      if (current) dropRemoteControl(input.sessionId, current);
       if (!current?.muteUpdates) {
         (current?.onEvent ?? input.onEvent)({ type: "session.ended", code });
       }
@@ -564,6 +604,16 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       providerSessionId: live.claudeSessionId,
     });
     live.onEvent({ type: "session.started" });
+    const wanted = remoteControlByThread.get(input.sessionId);
+    if (wanted) {
+      void enableRemoteControl(input.sessionId, live, wanted).catch(
+        (error: unknown) =>
+          wanted.sink({
+            type: "status",
+            text: `Remote Control could not reconnect: ${errorText(error)}`,
+          }),
+      );
+    }
     return live;
   } catch (error) {
     await stopClaudeSession(input.sessionId);
@@ -581,18 +631,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   const content = (message.message as { content: unknown[] }).content;
   if (content.length === 0) return;
 
-  live.emittedAssistant = "";
-  live.emittedReasoning = "";
-  live.pendingAssistantBoundary = false;
-  live.toolsByIndex.clear();
-  live.toolsById.clear();
-  live.agentTasks.clear();
-  live.backgroundTasks.clear();
-  live.backgroundRows.clear();
-  clearAwaitingResume(live);
-  live.backgroundKey = "";
-  live.taskNotes = [];
-  live.turnResultSeen = false;
+  resetTurnState(live);
 
   const turnPromise = new Promise<void>((resolve, reject) => {
     live.turnDone = resolve;
@@ -602,7 +641,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   settlePendingTurn(live);
 
   try {
-    await writeJson(input.sessionId, message);
+    await writeUserMessage(input.sessionId, live, message);
     settlePendingTurn(live);
     await turnPromise;
   } catch (error) {
@@ -657,6 +696,22 @@ function handleLine(sessionId: string, live: Live, line: string): void {
         }
       },
     );
+    return;
+  }
+
+  const answer = parseControlResponse(rec);
+  if (answer) {
+    const waiter = live.controlWaiters.get(answer.requestId);
+    if (waiter) {
+      live.controlWaiters.delete(answer.requestId);
+      if (answer.ok) waiter.resolve(answer.payload ?? undefined);
+      else waiter.reject(new Error(answer.error ?? "Request failed"));
+    }
+  }
+
+  const replay = replayedUserMessage(rec);
+  if (replay) {
+    handleReplayedUser(sessionId, live, replay);
     return;
   }
 
@@ -1752,6 +1807,188 @@ function nextControlId(live: Live): string {
   return `monocode_${live.nextControlId}`;
 }
 
+function resetTurnState(live: Live): void {
+  live.emittedAssistant = "";
+  live.emittedReasoning = "";
+  live.pendingAssistantBoundary = false;
+  live.toolsByIndex.clear();
+  live.toolsById.clear();
+  live.agentTasks.clear();
+  live.backgroundTasks.clear();
+  live.backgroundRows.clear();
+  clearAwaitingResume(live);
+  live.backgroundKey = "";
+  live.taskNotes = [];
+  live.turnResultSeen = false;
+}
+
+/** Tag the message so its `--replay-user-messages` echo is recognised. */
+function writeUserMessage(
+  sessionId: string,
+  live: Live,
+  message: Record<string, unknown>,
+): Promise<void> {
+  const uuid = crypto.randomUUID();
+  live.sentUuids.add(uuid);
+  return writeJson(sessionId, { ...message, uuid });
+}
+
+/**
+ * Claude echoes every user message. The app's own are dropped; one sent
+ * through Remote Control either joins the running turn as an interjection or
+ * starts a turn the app is asked to show.
+ */
+function handleReplayedUser(
+  sessionId: string,
+  live: Live,
+  replay: { uuid?: string; text: string },
+): void {
+  if (replay.uuid && live.sentUuids.delete(replay.uuid)) return;
+  const text = replay.text.trim();
+  if (!text) return;
+  if (live.activeTurn) {
+    if (!live.muteUpdates) {
+      live.onEvent({ type: "interjection", text, customType: "Remote Control" });
+    }
+    return;
+  }
+  startRemoteTurn(sessionId, live, text);
+}
+
+function startRemoteTurn(sessionId: string, live: Live, text: string): void {
+  const events: HarnessEvent[] = [];
+  live.onEvent = (event) => events.push(event);
+  live.cancelled = false;
+  live.muteUpdates = false;
+  resetTurnState(live);
+  const done = new Promise<void>((resolve, reject) => {
+    live.turnDone = resolve;
+    live.turnFailed = reject;
+  });
+  done.catch(() => undefined);
+  live.activeTurn = true;
+  live.remoteTurn = { events, done };
+  // Turns the app sends meanwhile wait for this one, as for its own turns.
+  live.turns = live.turns
+    .catch(() => undefined)
+    .then(() => done)
+    .catch(() => undefined);
+  if (!announceRemoteTurn({ harness: "claude", sessionId, text })) {
+    live.remoteTurn = null;
+  }
+}
+
+async function joinRemoteTurn(input: SendTurnInput): Promise<void> {
+  const live = liveByThread.get(input.sessionId);
+  const remote = live?.remoteTurn;
+  if (!live || !remote) return;
+  live.remoteTurn = null;
+  live.onEvent = input.onEvent;
+  live.runtimeMode = input.runtimeMode;
+  input.onAccepted?.();
+  for (const event of remote.events) input.onEvent(event);
+  await remote.done;
+}
+
+function controlRequest(
+  sessionId: string,
+  live: Live,
+  request: Record<string, unknown>,
+): Promise<Record<string, unknown> | undefined> {
+  const id = nextControlId(live);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      live.controlWaiters.delete(id);
+      reject(new Error("Claude Code did not answer"));
+    }, CONTROL_TIMEOUT_MS);
+    live.controlWaiters.set(id, {
+      resolve: (response) => {
+        clearTimeout(timer);
+        resolve(response);
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    });
+    writeJson(sessionId, buildControlRequest(id, request)).catch(
+      (error: unknown) => {
+        live.controlWaiters.delete(id);
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+async function enableRemoteControl(
+  sessionId: string,
+  live: Live,
+  wanted: { name?: string; sink: (event: HarnessEvent) => void },
+): Promise<string> {
+  const response = await controlRequest(sessionId, live, {
+    subtype: "remote_control",
+    enabled: true,
+    ...(wanted.name ? { name: wanted.name } : {}),
+  });
+  const url = response?.session_url;
+  if (typeof url !== "string" || !url) {
+    throw new Error("Claude Code returned no Remote Control session");
+  }
+  live.remoteControlUrl = url;
+  wanted.sink({ type: "remoteControl", url });
+  return url;
+}
+
+/** The child is going away, and its Remote Control connection with it. */
+function dropRemoteControl(sessionId: string, live: Live): void {
+  for (const waiter of live.controlWaiters.values()) {
+    waiter.reject(new Error("Claude Code exited"));
+  }
+  live.controlWaiters.clear();
+  if (!live.remoteControlUrl) return;
+  live.remoteControlUrl = null;
+  remoteControlByThread.get(sessionId)?.sink({ type: "remoteControl" });
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function setClaudeRemoteControl(
+  input: RemoteControlInput,
+): Promise<string | null> {
+  if (!input.enabled) {
+    remoteControlByThread.delete(input.sessionId);
+    const live = liveByThread.get(input.sessionId);
+    if (live?.remoteControlUrl) {
+      await controlRequest(input.sessionId, live, {
+        subtype: "remote_control",
+        enabled: false,
+      });
+      live.remoteControlUrl = null;
+    }
+    input.onEvent({ type: "remoteControl" });
+    return null;
+  }
+  const wanted = { name: input.name, sink: input.onEvent };
+  remoteControlByThread.set(input.sessionId, wanted);
+  // A running child keeps its current turn's event sink; only an idle thread
+  // needs one started for it.
+  const live =
+    liveByThread.get(input.sessionId) ?? (await ensureLive(input));
+  try {
+    return await enableRemoteControl(input.sessionId, live, wanted);
+  } catch (error) {
+    remoteControlByThread.delete(input.sessionId);
+    throw error;
+  }
+}
+
+export function isClaudeRemoteControlled(sessionId: string): boolean {
+  return !!liveByThread.get(sessionId)?.remoteControlUrl;
+}
+
 function writeJson(
   sessionId: string,
   payload: Record<string, unknown>,
@@ -1818,4 +2055,5 @@ export function __claudeTestReset(): void {
   resumeByThread.clear();
   tasksByThread.clear();
   cancelledThreads.clear();
+  remoteControlByThread.clear();
 }
