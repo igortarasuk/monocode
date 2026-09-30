@@ -364,10 +364,8 @@ export function groupTurnItems(
   options?: { settled?: boolean },
 ): TurnItem[] {
   const settled = options?.settled ?? false;
-  const visible = withoutSupersededInitialThinking(
-    blocks.filter(
-      (block) => !isIgnoredTurnBlock(block) && !isHiddenTool(block),
-    ),
+  const visible = blocks.filter(
+    (block) => !isIgnoredTurnBlock(block) && !isHiddenTool(block),
   );
   const items: TurnItem[] = [];
   let activity: Block[] = [];
@@ -403,55 +401,6 @@ export function groupTurnItems(
   });
   flush();
   return items;
-}
-
-/**
- * Some harnesses publish private reasoning before their first assistant text.
- * Keep it around only while that text has not arrived; if a tool starts first,
- * the reasoning belongs to that activity group and remains visible there.
- */
-function withoutSupersededInitialThinking(blocks: Block[]): Block[] {
-  let start = 0;
-  while (
-    start < blocks.length &&
-    (blocks[start].role === "user" || blocks[start].role === "system")
-  ) {
-    start += 1;
-  }
-
-  let end = start;
-  while (end < blocks.length && isThinkingBlock(blocks[end])) end += 1;
-  if (end === start) return blocks;
-
-  const following = blocks.slice(end);
-  const proseIndex = following.findIndex(isProseBlock);
-  if (proseIndex < 0) return blocks;
-  const toolIndex = following.findIndex(isToolBlock);
-  if (toolIndex >= 0 && toolIndex < proseIndex) return blocks;
-
-  return [...blocks.slice(0, start), ...blocks.slice(end)];
-}
-
-/** The leading reasoning-only activity shown before the first response arrives. */
-export function initialThinkingIndex(items: TurnItem[]): number {
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    if (
-      item.type === "block" &&
-      (item.block.role === "user" || item.block.role === "system")
-    ) {
-      continue;
-    }
-    if (
-      item.type === "activity" &&
-      item.blocks.length > 0 &&
-      item.blocks.every(isThinkingBlock)
-    ) {
-      return index;
-    }
-    return -1;
-  }
-  return -1;
 }
 
 function isIgnoredTurnBlock(block: Block): boolean {
@@ -982,17 +931,15 @@ export function firstFoldableIndex(items: TurnItem[]): number {
 
 /** Every block inside a fold, work and commentary alike. */
 export function foldedBlocks(items: TurnItem[], fold: WorkFold): Block[] {
-  return items
-    .slice(fold.start, fold.end + 1)
-    .flatMap((item) =>
-      item.type === "block"
-        ? [item.block]
-        : // Delegated runs keep their own rows, so they are not part of what
-          // the fold summarises.
-          item.type === "subagents"
-          ? []
-          : item.blocks,
-    );
+  return items.slice(fold.start, fold.end + 1).flatMap((item) =>
+    item.type === "block"
+      ? [item.block]
+      : // Delegated runs keep their own rows, so they are not part of what
+        // the fold summarises.
+        item.type === "subagents"
+        ? []
+        : item.blocks,
+  );
 }
 
 /** True when a nested scroller should consume this wheel, not the parent. */

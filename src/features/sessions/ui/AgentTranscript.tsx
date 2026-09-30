@@ -100,7 +100,6 @@ import {
   foldedBlocks,
   groupTurnItems,
   groupTurns,
-  initialThinkingIndex,
   isFailedStatus,
   isIncompleteTool,
   isSubagentBlock,
@@ -680,7 +679,6 @@ function AgentTranscriptComponent({
           // Earlier activity groups have already been followed by prose or
           // more work. Only the last one can still be the live group.
           const foldedAt = lastActivityIndex(items);
-          const initialThinkingAt = initialThinkingIndex(items);
           const startedAt = userBlock?.startedAt;
           // The agent starting its answer is the end of the work: fold the
           // groups then, not when the turn finally settles, so the collapse
@@ -758,27 +756,20 @@ function AgentTranscriptComponent({
                 onOpenDiff={onOpenDiff}
               />
             ) : item.type === "activity" ? (
-              itemIndex === initialThinkingAt ? (
-                <InitialThinking
-                  key={item.blocks[0].id}
-                  live={visible && !settled}
-                />
-              ) : (
-                <ActivityPhases
-                  key={item.blocks[0].id}
-                  blocks={item.blocks}
-                  cwd={cwd}
-                  done={
-                    !visible ||
-                    settled ||
-                    itemIndex < foldedAt ||
-                    (answering && !workStillRunning)
-                  }
-                  onApproval={onApproval}
-                  onOpenFile={onOpenFile}
-                  onOpenDiff={onOpenDiff}
-                />
-              )
+              <ActivityPhases
+                key={item.blocks[0].id}
+                blocks={item.blocks}
+                cwd={cwd}
+                done={
+                  !visible ||
+                  settled ||
+                  itemIndex < foldedAt ||
+                  (answering && !workStillRunning)
+                }
+                onApproval={onApproval}
+                onOpenFile={onOpenFile}
+                onOpenDiff={onOpenDiff}
+              />
             ) : (
               <TranscriptBlock
                 key={item.block.id}
@@ -993,23 +984,6 @@ export const AgentTranscript = memo(
   AgentTranscriptComponent,
   (previous, next) => previous.visible === false && next.visible === false,
 );
-
-/** Placeholder for private reasoning before the first assistant text arrives. */
-function InitialThinking({
-  live,
-  embedded = false,
-}: {
-  live: boolean;
-  embedded?: boolean;
-}) {
-  return (
-    <div
-      className={`min-w-0 pt-3 pb-1 font-sans text-sm text-content/50 ${embedded ? "" : "px-4"}`}
-    >
-      {live ? <Shimmer duration={1.6}>Thinking…</Shimmer> : "Thinking…"}
-    </div>
-  );
-}
 
 /**
  * The clock on a turn's fold line: how long the agent has been at it, or what
@@ -3104,11 +3078,7 @@ function ActivityToolRow({
   const appCall = monoCodeToolCall(block);
   if (appCall) {
     return (
-      <MonoCodeCallRow
-        block={block}
-        call={appCall}
-        onApproval={onApproval}
-      />
+      <MonoCodeCallRow block={block} call={appCall} onApproval={onApproval} />
     );
   }
   const label = toolCallLabel(block, cwd);
@@ -3196,7 +3166,8 @@ function MonoCodeCallRow({
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
 }) {
   const state = toolCallState(block);
-  const output = block.tool?.detail?.trim() || block.tool?.preview?.output?.trim();
+  const output =
+    block.tool?.detail?.trim() || block.tool?.preview?.output?.trim();
   const [errorOpen, setErrorOpen] = useState(false);
   const hasError = state === "rejected" && !!output;
   const pendingApproval = needsApproval(block);
@@ -3242,9 +3213,7 @@ function MonoCodeCallRow({
           {summary}
         </button>
       ) : (
-        <div className="flex min-w-0 items-center gap-1.5 py-1">
-          {summary}
-        </div>
+        <div className="flex min-w-0 items-center gap-1.5 py-1">{summary}</div>
       )}
       {errorOpen && hasError ? (
         <pre className="min-w-0 whitespace-pre-wrap break-words py-1 pl-5 font-mono text-[12px] leading-5 text-red-400/80">
@@ -3398,11 +3367,7 @@ function ToolCall({
   if (appCall) {
     return (
       <div className={frame}>
-        <MonoCodeCallRow
-          block={block}
-          call={appCall}
-          onApproval={onApproval}
-        />
+        <MonoCodeCallRow block={block} call={appCall} onApproval={onApproval} />
       </div>
     );
   }
