@@ -279,6 +279,8 @@ export function buildClaudeSpawnArgs(input: {
   } else {
     args.push(`--setting-sources=${CLAUDE_SETTING_SOURCES}`);
     args.push("--settings", JSON.stringify(settings));
+    // Claude streams thinking as empty deltas unless asked for summaries.
+    args.push("--thinking-display", "summarized");
   }
   if (input.model) args.push("--model", input.model);
   if (input.effort) args.push("--effort", input.effort);

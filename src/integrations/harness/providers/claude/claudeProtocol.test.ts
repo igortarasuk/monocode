@@ -118,6 +118,9 @@ describe("buildClaudeSpawnArgs", () => {
     expect(args).toContain("--include-partial-messages");
     expect(args).toContain("--setting-sources=user,project,local");
     expect(args).toEqual(
+      expect.arrayContaining(["--thinking-display", "summarized"]),
+    );
+    expect(args).toEqual(
       expect.arrayContaining([
         "--model",
         "claude-sonnet-5",
@@ -151,6 +154,7 @@ describe("buildClaudeSpawnArgs", () => {
     const settings = args[args.indexOf("--settings") + 1];
     expect(JSON.parse(settings)).toMatchObject({ disableAllHooks: true });
     expect(args).not.toContain("--permission-prompt-tool");
+    expect(args).not.toContain("--thinking-display");
   });
 
   it("locks isolated read-only prompts to plan mode", () => {
