@@ -57,7 +57,7 @@ try {
       'ARM64' { $target = 'win32-arm64' }
       default { throw 'MonoCode Host requires x64 or ARM64 Windows.' }
     }
-    $filename = "monocode-host-$target.zip"
+    $filename = "monochrome-host-$target.zip"
     $runtimeRoot = Join-Path $base 'runtime'
     New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
     $temporary = Join-Path $runtimeRoot ('.install-' + [Guid]::NewGuid().ToString('N'))
