@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 mod account_identity;
+mod app_release;
 mod assistants;
 mod automations;
 mod azure_devops;
@@ -467,6 +468,7 @@ pub fn run() {
             harness::harness_sse_open,
             harness::harness_sse_close,
             harness::harness_exec,
+            app_release::app_latest_release,
             harness_updates::harness_latest_version,
             harness_updates::harness_update_check_claim,
             harness_updates::harness_update,
