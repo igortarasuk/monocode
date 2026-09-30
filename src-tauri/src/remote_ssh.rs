@@ -404,7 +404,9 @@ pub fn bootstrap_script(platform: HostPlatform) -> String {
 
 fn bootstrap_script_from_template(platform: HostPlatform, template: &str) -> String {
     let version = env!("CARGO_PKG_VERSION");
-    let url = format!("https://github.com/hardbeat920/monocode/releases/download/v{version}");
+    // Monochrome publishes its own host packages (see host-release.yml); the
+    // `v*` tags belong to upstream MonoCode.
+    let url = format!("https://github.com/igortarasuk/monocode/releases/download/host-v{version}");
     match platform {
         // include_str! preserves checkout line endings, including Windows CRLF.
         HostPlatform::Unix => template

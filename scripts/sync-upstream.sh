@@ -99,4 +99,10 @@ if [ "$INSTALL" -eq 1 ]; then
   echo "Installed $HOME/.local/bin/monochrome"
 fi
 
+# SSH machine setup downloads the host from our `host-v<version>` release.
+HOST_TAG="host-v$(node -p 'require("./package.json").version')"
+if ! git ls-remote --exit-code --tags origin "refs/tags/$HOST_TAG" >/dev/null 2>&1; then
+  echo "No $HOST_TAG release yet; after pushing, publish host packages with:"
+  echo "  git tag $HOST_TAG && git push origin $HOST_TAG"
+fi
 echo "Done. Push is manual."

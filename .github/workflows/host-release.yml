@@ -1,0 +1,55 @@
+name: Host release
+
+# Monochrome's own MonoCode Host packages, downloaded by SSH machine setup
+# from the `host-v<version>` release. Push `host-v<package.json version>`.
+on:
+  push:
+    tags:
+      - "host-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  host:
+    name: Standalone host packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check tag matches app version
+        run: |
+          VERSION="$(node -p 'require("./package.json").version')"
+          if [[ "$GITHUB_REF_NAME" != "host-v$VERSION" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match host-v$VERSION" >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run test:host
+      - run: npm run host:package -- --all
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ARCHIVES=(build/host-packages/*.tar.gz build/host-packages/*.zip)
+          if (( ${#ARCHIVES[@]} != 6 )); then
+            echo "Expected six host archives" >&2
+            exit 1
+          fi
+          FILES=()
+          for archive in "${ARCHIVES[@]}"; do
+            [[ -f "$archive.sha256" ]] || { echo "Missing $archive.sha256" >&2; exit 1; }
+            FILES+=("$archive" "$archive.sha256")
+          done
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${FILES[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${FILES[@]}" \
+              --title "Monochrome Host ${GITHUB_REF_NAME#host-v}" \
+              --notes "MonoCode Host packages for Monochrome SSH machines."
+          fi
