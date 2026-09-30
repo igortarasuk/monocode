@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
   existsSync,
   mkdirSync,
@@ -9,7 +9,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { launchAgent, systemdUnit, uninstallService } from "./service";
+import {
+  launchAgent,
+  systemdUnit,
+  uninstallService,
+  waitForUserBus,
+} from "./service";
 
 it("keeps paths and environment content from injecting service configuration", () => {
   const options = {
@@ -83,4 +88,23 @@ it("unregisters only this user's Windows task", async () => {
   expect(scripts[0]).toContain('"MonoCode Host-$sid"');
   expect(scripts[0]).toContain("Unregister-ScheduledTask");
   expect(scripts[0]).not.toMatch(/Remove-Item|\.monocode-host/);
+});
+
+it("waits for the user bus that lingering starts in the background", async () => {
+  let checks = 0;
+  const exists = vi.fn(async (path: string) => {
+    expect(path).toBe("/run/user/1002/bus");
+    if (++checks < 3) throw new Error("ENOENT");
+  });
+  await waitForUserBus(
+    { DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1002/bus" },
+    exists,
+    10,
+    0,
+  );
+  expect(exists).toHaveBeenCalledTimes(3);
+
+  const other = vi.fn();
+  await waitForUserBus({ DBUS_SESSION_BUS_ADDRESS: "tcp:host=x" }, other, 10, 0);
+  expect(other).not.toHaveBeenCalled();
 });

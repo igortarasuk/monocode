@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import {
@@ -111,6 +111,31 @@ const systemdEnvironment = (uid: number): NodeJS.ProcessEnv => {
       process.env.DBUS_SESSION_BUS_ADDRESS ?? `unix:path=${runtime}/bus`,
   };
 };
+
+/**
+ * `loginctl enable-linger` starts the user manager in the background. Sessions
+ * without a logind login (Teleport, some jump hosts) have no manager until then,
+ * so systemctl --user fails until its bus socket appears.
+ */
+export async function waitForUserBus(
+  env: NodeJS.ProcessEnv,
+  exists: (path: string) => Promise<unknown> = access,
+  attempts = 50,
+  delayMs = 200,
+): Promise<void> {
+  const address = env.DBUS_SESSION_BUS_ADDRESS ?? "";
+  if (!address.startsWith("unix:path=")) return;
+  const socket = address.slice("unix:path=".length).split(",")[0];
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      await exists(socket);
+      return;
+    } catch {
+      /* the user manager is starting */
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+}
 
 type Run = (
   command: string,
@@ -240,6 +265,7 @@ export async function installService(
         `This host needs systemd user services and lingering to keep sessions running after SSH disconnects. An administrator can enable it with: sudo loginctl enable-linger ${user.username}`,
       );
     }
+    await waitForUserBus(env);
     const folder = join(homedir(), ".config/systemd/user");
     await mkdir(folder, { recursive: true });
     const file = join(folder, "monocode-host.service");
