@@ -784,7 +784,7 @@ pub fn automation_runs_recover(
         if run.status == "running" {
             run.status = "cancelled".into();
             run.completed_at = Some(now);
-            run.error = Some("Interrupted when MonoCode last stopped.".into());
+            run.error = Some("Interrupted when Monochrome last stopped.".into());
             apply_run_summary(&mut automation, &run);
             write_run(&tx, &run)?;
             write_automation(&tx, &automation)?;

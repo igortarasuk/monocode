@@ -1101,7 +1101,7 @@ function SidebarComponent({
               {
                 kind: "item" as const,
                 id: "copy-monocode-session-id",
-                label: "MonoCode session ID",
+                label: "Monochrome session ID",
               },
             ],
           },

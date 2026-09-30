@@ -384,7 +384,7 @@ export function SprintCalendar({
           <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-content/55">
             <span title="Local plan">plan {hoursLabel(summary.planned)}</span>
             <span aria-hidden>·</span>
-            <span title="Logged in MonoCode" className="text-emerald-400">
+            <span title="Logged in Monochrome" className="text-emerald-400">
               spent {hoursLabel(summary.spent)}
             </span>
           </span>

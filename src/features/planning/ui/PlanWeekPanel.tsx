@@ -427,7 +427,7 @@ export function PlanWeekPanel({
         ) : (
           <span className="min-w-0 flex-1 text-[11px] text-content/45">
             Creates Todo issues in cycle #{cycle.number}, assigned to you. Hours
-            are kept in MonoCode.
+            are kept in Monochrome.
           </span>
         )}
         {confirming ? (
