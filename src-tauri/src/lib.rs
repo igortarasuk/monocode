@@ -301,6 +301,8 @@ pub fn run() {
             auto_model::auto_model_project,
             project_knowledge::project_knowledge_sync,
             project_knowledge::project_knowledge_record,
+            project_knowledge::project_knowledge_page,
+            project_knowledge::project_knowledge_write,
             auto_model::auto_model_session_set,
             auto_model::auto_model_session_get,
             reminders::reminder_list,

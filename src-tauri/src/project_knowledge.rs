@@ -580,6 +580,161 @@ pub fn project_knowledge_record(
     record(&mut conn, &base, &cwd, &notes, &changes, now_millis())
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoggedChange {
+    day: String,
+    summary: String,
+}
+
+/// A host or service that another project's map names too.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedNode {
+    name: String,
+    projects: Vec<String>,
+}
+
+/// Everything the project page shows.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgePage {
+    status: KnowledgeStatus,
+    user: String,
+    model: String,
+    infra: String,
+    changes: String,
+    change_log: Vec<LoggedChange>,
+    shared: Vec<SharedNode>,
+}
+
+fn change_log(conn: &Connection, key: &str) -> Result<Vec<LoggedChange>, String> {
+    let mut statement = conn
+        .prepare(
+            "SELECT day, summary FROM project_changes WHERE project_key = ?1
+             ORDER BY day DESC, recorded_at DESC, rowid DESC LIMIT 200",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([key], |row| {
+            Ok(LoggedChange {
+                day: row.get(0)?,
+                summary: row.get(1)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<_, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn shared_nodes(conn: &Connection, key: &str) -> Result<Vec<SharedNode>, String> {
+    let mut statement = conn
+        .prepare(
+            "SELECT mine.name, other.project_key FROM project_infra mine
+             JOIN project_infra other
+               ON other.name = mine.name AND other.project_key <> mine.project_key
+             WHERE mine.project_key = ?1
+             ORDER BY mine.name, other.project_key",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([key], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+    let mut shared: Vec<SharedNode> = Vec::new();
+    for row in rows {
+        let (name, project) = row.map_err(|error| error.to_string())?;
+        match shared.last_mut() {
+            Some(node) if node.name == name => node.projects.push(project),
+            _ => shared.push(SharedNode {
+                name,
+                projects: vec![project],
+            }),
+        }
+    }
+    Ok(shared)
+}
+
+fn page(
+    conn: &mut Connection,
+    base: &Path,
+    cwd: &str,
+    create: bool,
+    now: i64,
+) -> Result<KnowledgePage, String> {
+    let status = sync(conn, base, cwd, create, now)?;
+    if !status.mounted {
+        return Ok(KnowledgePage {
+            status,
+            ..KnowledgePage::default()
+        });
+    }
+    let key = crate::auto_model::project_key(cwd)?;
+    let doc = |name: &str| Ok::<_, String>(stored_doc(conn, &key, name)?.unwrap_or_default());
+    Ok(KnowledgePage {
+        user: doc(USER_DOC)?,
+        model: doc(MODEL_DOC)?,
+        infra: doc(INFRA_DOC)?,
+        changes: doc(CHANGES_DOC)?,
+        change_log: change_log(conn, &key)?,
+        shared: shared_nodes(conn, &key)?,
+        status,
+    })
+}
+
+fn write(
+    conn: &mut Connection,
+    base: &Path,
+    cwd: &str,
+    name: &str,
+    content: &str,
+    now: i64,
+) -> Result<KnowledgePage, String> {
+    if !DOCS.contains(&name) {
+        return Err("Unknown project knowledge document.".into());
+    }
+    if content.len() as u64 > MAX_DOC_BYTES {
+        return Err("This document is larger than 1 MB.".into());
+    }
+    let key = crate::auto_model::project_key(cwd)?;
+    let status = sync(conn, base, cwd, true, now)?;
+    if !status.mounted {
+        return Err(status
+            .problem
+            .unwrap_or_else(|| "This project has no knowledge folder.".into()));
+    }
+    fs::write(store_dir(base, &key).join(name), content).map_err(|error| error.to_string())?;
+    page(conn, base, cwd, false, now)
+}
+
+/// Documents, infrastructure map and change log for the project page.
+#[tauri::command(async)]
+pub fn project_knowledge_page(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    cwd: String,
+    create: bool,
+) -> Result<KnowledgePage, String> {
+    let base = base_dir(&app)?;
+    let mut conn = store.lock_conn()?;
+    page(&mut conn, &base, &cwd, create, now_millis())
+}
+
+/// Save one document edited on the project page.
+#[tauri::command(async)]
+pub fn project_knowledge_write(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    cwd: String,
+    name: String,
+    content: String,
+) -> Result<KnowledgePage, String> {
+    let base = base_dir(&app)?;
+    let mut conn = store.lock_conn()?;
+    write(&mut conn, &base, &cwd, &name, &content, now_millis())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -734,6 +889,77 @@ mod tests {
         assert!(!status.mounted);
         assert!(status.problem.unwrap().contains("already exists"));
         assert!(!project.join(MOUNT).join("README.md").exists());
+        let _ = fs::remove_dir_all(project.parent().unwrap());
+    }
+
+    #[test]
+    fn page_shows_documents_log_and_hosts_shared_with_other_projects() {
+        let (base, project, cwd) = scratch();
+        let other = project.parent().unwrap().join("billing");
+        fs::create_dir_all(&other).unwrap();
+        let other_cwd = other.to_string_lossy().into_owned();
+        let mut conn = conn();
+
+        assert!(
+            !page(&mut conn, &base, &cwd, false, 1)
+                .unwrap()
+                .status
+                .mounted
+        );
+        assert!(write(&mut conn, &base, &cwd, "README.md", "x", 1).is_err());
+
+        write(
+            &mut conn,
+            &base,
+            &other_cwd,
+            INFRA_DOC,
+            "## eu-mon-1\n- kind: host\n",
+            2,
+        )
+        .unwrap();
+        write(
+            &mut conn,
+            &base,
+            &cwd,
+            USER_DOC,
+            "Ask before touching prod.\n",
+            3,
+        )
+        .unwrap();
+        write(
+            &mut conn,
+            &base,
+            &cwd,
+            CHANGES_DOC,
+            "- 2026-09-30 Added eu-mon-1\n- 2026-10-02 Teleport upgraded to 18.2\n",
+            4,
+        )
+        .unwrap();
+        let page = write(
+            &mut conn,
+            &base,
+            &cwd,
+            INFRA_DOC,
+            "## eu-mon-1\n- kind: host\n\n## db-1\n- kind: host\n",
+            5,
+        )
+        .unwrap();
+
+        assert_eq!(page.user, "Ask before touching prod.\n");
+        assert_eq!(page.status.infra.len(), 2);
+        assert_eq!(page.change_log[0].day, "2026-10-02");
+        assert_eq!(page.change_log.len(), 2);
+        assert_eq!(
+            page.shared,
+            vec![SharedNode {
+                name: "eu-mon-1".into(),
+                projects: vec![crate::auto_model::project_key(&other_cwd).unwrap()],
+            }]
+        );
+        assert_eq!(
+            fs::read_to_string(project.join(MOUNT).join(USER_DOC)).unwrap(),
+            "Ask before touching prod.\n"
+        );
         let _ = fs::remove_dir_all(project.parent().unwrap());
     }
 }
