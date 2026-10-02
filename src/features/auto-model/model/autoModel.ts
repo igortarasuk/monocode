@@ -322,32 +322,57 @@ export function buildRecapPrompt(nextRequest: string): string {
 ${clip(nextRequest, 1_500)}
 </next_request>
 
-Do not run commands, read files or call tools. Use only this conversation. Plain markdown, no greeting, exactly these two sections:
+Do not run commands, read files or call tools. Use only this conversation. Plain markdown, no greeting, exactly these three sections:
 
 ## Recap
 Under 120 words: what this session did, where it stands, files it edited, anything unfinished.
 
 ## Project memory
-Up to 6 bullets of durable facts about this project that any later session would need: conventions, commands that work, pitfalls found here. No task progress, nothing obvious from the code. Write "none" when there is nothing.`;
+Up to 6 bullets of durable facts about this project that any later session would need: conventions, commands that work, pitfalls found here. No task progress, nothing obvious from the code. Write "none" when there is nothing.
+
+## Changes
+Up to 6 bullets of changes this session made to infrastructure, hosts, services, versions, CI or deployment — what changed and why. No code edits. Write "none" when there were none.`;
 }
 
-/** Split the outgoing agent's reply into the recap and the memory bullets. */
-export function parseRecap(output: string): {
-  recap: string;
-  memory: string[];
-} {
-  const text = output.trim();
-  const match = /^#{1,6}\s*Project memory\s*$/im.exec(text);
-  const head = (match ? text.slice(0, match.index) : text)
-    .replace(/^#{1,6}\s*Recap\s*$/im, "")
-    .trim();
-  const tail = match ? text.slice(match.index + match[0].length) : "";
-  const memory = tail
+function bullets(section: string): string[] {
+  return section
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => /^[-*]\s+\S/.test(line))
     .map((line) => line.replace(/^[-*]\s+/, "").trim())
     .filter((line) => !/^none\.?$/i.test(line))
     .slice(0, 6);
-  return { recap: head, memory };
 }
+
+/** Split the outgoing agent's reply into the recap, memory and change bullets. */
+export function parseRecap(output: string): {
+  recap: string;
+  memory: string[];
+  changes: string[];
+} {
+  const sections = new Map<string, string>();
+  let current = "recap";
+  for (const line of output.trim().split("\n")) {
+    const heading = /^#{1,6}\s*(Recap|Project memory|Changes)\s*$/i.exec(
+      line.trim(),
+    );
+    if (heading) {
+      current = heading[1].toLowerCase();
+      continue;
+    }
+    sections.set(current, `${sections.get(current) ?? ""}${line}\n`);
+  }
+  return {
+    recap: (sections.get("recap") ?? "").trim(),
+    memory: bullets(sections.get("project memory") ?? ""),
+    changes: bullets(sections.get("changes") ?? ""),
+  };
+}
+
+/**
+ * Added to a session's first prompt when the project has its knowledge folder,
+ * so every agent knows where the shared picture of the project lives.
+ */
+export const KNOWLEDGE_POINTER = `<project_knowledge>
+This project keeps shared knowledge in .monochrome/ (start with .monochrome/README.md): user.md holds the owner's instructions — read it first and never edit it; model.md holds what earlier sessions learned; infra.md maps hosts, proxies and services with how to reach them and how to check their live state; changes.md logs infrastructure, version and CI changes. Read what is relevant to this task before acting, verify infrastructure entries with their check command, update model.md, infra.md and changes.md when you learn or change something durable, and ask the user when the knowledge is missing or looks outdated.
+</project_knowledge>`;

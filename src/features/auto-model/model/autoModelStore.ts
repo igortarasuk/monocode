@@ -166,11 +166,29 @@ export function loadProjectMeta(cwd: string): Promise<ProjectMeta> {
   return invoke<ProjectMeta>("auto_model_project", { cwd });
 }
 
-export function rememberProjectFacts(
+export type KnowledgeStatus = {
+  mounted: boolean;
+  problem: string | null;
+  infra: { name: string; kind: string; role: string }[];
+  changes: number;
+};
+
+/** Copy the project's knowledge files into the database; `create` mounts them. */
+export function syncProjectKnowledge(
   cwd: string,
-  entries: string[],
-): Promise<string[]> {
-  return invoke<string[]>("auto_model_remember", { cwd, entries });
+  create: boolean,
+): Promise<KnowledgeStatus> {
+  return invoke<KnowledgeStatus>("project_knowledge_sync", { cwd, create });
+}
+
+/** Add what a session learned and changed to the project knowledge. */
+export function recordProjectKnowledge(input: {
+  cwd: string;
+  sessionId: string;
+  notes: string[];
+  changes: string[];
+}): Promise<KnowledgeStatus> {
+  return invoke<KnowledgeStatus>("project_knowledge_record", input);
 }
 
 export function saveSessionTask(task: SessionTask): Promise<void> {

@@ -39,6 +39,7 @@ import {
   type ProjectMeta,
 } from "./autoModel";
 import { createAutoModelGate, type AutoModelDeps } from "./autoModelGate";
+import { withProjectKnowledge } from "./projectKnowledge";
 import {
   autoModelPick,
   isAutoModel,
@@ -231,13 +232,18 @@ describe("router prompt and replies", () => {
   it("splits a recap from the memory bullets", () => {
     expect(
       parseRecap(
-        "## Recap\nFixed the redirect in auth.go.\n\n## Project memory\n- Tests run with `make test`\n- none\n* Staging deploys from main",
+        "## Recap\nFixed the redirect in auth.go.\n\n## Project memory\n- Tests run with `make test`\n- none\n* Staging deploys from main\n\n## Changes\n- Teleport upgraded to 18.2 on the bastion",
       ),
     ).toEqual({
       recap: "Fixed the redirect in auth.go.",
       memory: ["Tests run with `make test`", "Staging deploys from main"],
+      changes: ["Teleport upgraded to 18.2 on the bastion"],
     });
-    expect(parseRecap("Just text")).toEqual({ recap: "Just text", memory: [] });
+    expect(parseRecap("Just text")).toEqual({
+      recap: "Just text",
+      memory: [],
+      changes: [],
+    });
   });
 
   it("narrows a long catalog to the current model's provider", () => {
@@ -254,6 +260,28 @@ describe("router prompt and replies", () => {
     expect(
       candidateModels("opencode", "opencode:m1").map((model) => model.id),
     ).toEqual(["opencode:m0", "opencode:m1", "opencode:m2", "opencode:m3"]);
+  });
+});
+
+describe("project knowledge pointer", () => {
+  it("is added to the first prompt of a mounted project only", async () => {
+    backend.invoke.mockImplementation(async (command, args) =>
+      command === "project_knowledge_sync"
+        ? { mounted: (args as { create: boolean }).create, infra: [], changes: 0 }
+        : null,
+    );
+    const input = { cwd: "/work/acme", sessionId: "s1", firstTurn: true };
+    // Auto is off and nothing is mounted yet: the prompt is untouched.
+    expect(await withProjectKnowledge("Fix login", input)).toBe("Fix login");
+    setAutoModel("s1", true);
+    const prompt = await withProjectKnowledge("Fix login", input);
+    expect(prompt.startsWith("Fix login\n\n<project_knowledge>")).toBe(true);
+    expect(prompt).toContain(".monochrome/README.md");
+    expect(
+      await withProjectKnowledge("more", { ...input, firstTurn: false }),
+    ).toBe("more");
+    backend.invoke.mockRejectedValue(new Error("no backend"));
+    expect(await withProjectKnowledge("Fix login", input)).toBe("Fix login");
   });
 });
 
@@ -386,7 +414,7 @@ describe("gate", () => {
       async (input: { onEvent: (event: unknown) => void }) => {
         input.onEvent({
           type: "message.delta",
-          text: "## Recap\nFixed the login redirect in auth.go; tests pass and nothing is left open.\n\n## Project memory\n- Tests run with `make test`",
+          text: "## Recap\nFixed the login redirect in auth.go; tests pass and nothing is left open.\n\n## Project memory\n- Tests run with `make test`\n\n## Changes\n- Zabbix proxy moved to eu-mon-2",
         });
       },
     );
@@ -397,9 +425,11 @@ describe("gate", () => {
     );
     await done;
 
-    expect(backend.invoke).toHaveBeenCalledWith("auto_model_remember", {
+    expect(backend.invoke).toHaveBeenCalledWith("project_knowledge_record", {
       cwd: "/work/acme",
-      entries: ["Tests run with `make test`"],
+      sessionId: "s1",
+      notes: ["Tests run with `make test`"],
+      changes: ["Zabbix proxy moved to eu-mon-2"],
     });
     expect(sessions.get("s2")?.model).toBe(small.id);
     expect(isAutoModel("s2")).toBe(true);

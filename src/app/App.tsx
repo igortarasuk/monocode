@@ -295,6 +295,7 @@ import {
 import { requestOutgoingHandoff } from "../features/sessions/model/handoffTurn";
 import { pinSessionModel } from "../features/auto-model/model/autoModelStore";
 import { useAutoModelGate } from "../features/auto-model/model/useAutoModelGate";
+import { withProjectKnowledge } from "../features/auto-model/model/projectKnowledge";
 import {
   applyBtwHarnessEvent,
   btwTurnHarness,
@@ -7096,11 +7097,14 @@ function Workspace({
           const prompt =
             intent === "build" && approvedPlan
               ? buildPlanPrompt(approvedPlan.text)
-              : await preparePrompt(harnessText, {
-                  harness: current.harness,
-                  sessionId,
-                  cwd: workCwd,
-                });
+              : await withProjectKnowledge(
+                  await preparePrompt(harnessText, {
+                    harness: current.harness,
+                    sessionId,
+                    cwd: workCwd,
+                  }),
+                  { cwd: current.cwd, sessionId, firstTurn: isFirstTurn },
+                );
           const turnPrompt = proposalDraft
             ? options?.orchestrationRetry?.response
               ? orchestrationRepairPrompt({

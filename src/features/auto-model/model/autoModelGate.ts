@@ -36,7 +36,7 @@ import {
   loadProjectMeta,
   loadSessionTask,
   markAutoSession,
-  rememberProjectFacts,
+  recordProjectKnowledge,
   saveSessionTask,
   setAutoModelActivity,
   setAutoModelPick,
@@ -276,11 +276,14 @@ export function createAutoModelGate<Options extends AutoModelSubmitOptions>(
         const asked =
           current.providerSessionId && isLiveHarness(current.harness)
             ? await requestRecap(current, text)
-            : { recap: "", memory: [] };
-        if (asked.memory.length > 0) {
-          await rememberProjectFacts(current.cwd, asked.memory).catch(
-            () => undefined,
-          );
+            : { recap: "", memory: [], changes: [] };
+        if (asked.memory.length > 0 || asked.changes.length > 0) {
+          await recordProjectKnowledge({
+            cwd: current.cwd,
+            sessionId: current.id,
+            notes: asked.memory,
+            changes: asked.changes,
+          }).catch(() => undefined);
         }
         const latest = deps().getSession(session.id) ?? current;
         const brief =
