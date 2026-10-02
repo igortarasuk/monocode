@@ -3,6 +3,7 @@ use tauri::Manager;
 mod account_identity;
 mod app_release;
 mod assistants;
+mod auto_model;
 mod automations;
 mod azure_devops;
 mod chat_background;
@@ -296,6 +297,11 @@ pub fn run() {
             notifications::request_notification_permission,
             notifications::show_notification,
             notifications::open_notification_settings,
+            auto_model::auto_model_project,
+            auto_model::auto_model_remember,
+            auto_model::auto_model_set_memory,
+            auto_model::auto_model_session_set,
+            auto_model::auto_model_session_get,
             reminders::reminder_list,
             reminders::reminder_set,
             reminders::reminder_clear,
