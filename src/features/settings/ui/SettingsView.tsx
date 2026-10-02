@@ -236,6 +236,12 @@ import {
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import {
+  saveMaskEmails,
+  saveShowRemainingUsage,
+  useMaskEmails,
+  useShowRemainingUsage,
+} from "../model/displayPrefs";
+import {
   accountStatus,
   accountUsageKey,
   useProviderAccountUsage,
@@ -3198,6 +3204,8 @@ function ProvidersPage({
     <>
       <ProviderAccountsSettings />
 
+      <UsageDisplaySettings />
+
       <Group
         id="text-generator"
         title="Commit and PR text"
@@ -3278,6 +3286,37 @@ function ProvidersPage({
         </Row>
       </Group>
     </>
+  );
+}
+
+function UsageDisplaySettings() {
+  const showRemainingUsage = useShowRemainingUsage();
+  const maskEmails = useMaskEmails();
+  return (
+    <Group title="Usage and privacy">
+      <Row
+        id="show-remaining-usage"
+        label="Show remaining usage"
+        description="Fill usage meters with what is left in each limit instead of what has been used."
+      >
+        <Toggle
+          label="Show remaining usage"
+          on={showRemainingUsage}
+          onChange={saveShowRemainingUsage}
+        />
+      </Row>
+      <Row
+        id="mask-emails"
+        label="Mask account emails"
+        description="Blur account emails in Settings and the usage popover until you click one, so they stay out of screenshots."
+      >
+        <Toggle
+          label="Mask account emails"
+          on={maskEmails}
+          onChange={saveMaskEmails}
+        />
+      </Row>
+    </Group>
   );
 }
 

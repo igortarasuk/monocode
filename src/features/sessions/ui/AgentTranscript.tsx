@@ -777,6 +777,7 @@ function AgentTranscriptComponent({
                 key={item.block.id}
                 block={item.block}
                 layout={transcriptLayout}
+                visible={item.block.role === "user" ? visible : undefined}
                 stickyIndex={firstVisibleTurn + turnIndex + 1}
                 // Prose reads the same wherever it lands: under the fold
                 // line at the top of the turn, or under the work it follows.
@@ -1174,7 +1175,7 @@ function TurnMetricsBadge({
   return (
     <div
       ref={root}
-      className="relative shrink-0"
+      className="relative shrink-0 ml-[3px]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setHovered(true)}
@@ -1410,6 +1411,7 @@ function EditLastTurnButton({
 const TranscriptBlock = memo(function TranscriptBlock({
   block,
   layout,
+  visible,
   stickyIndex,
   underLine = false,
   embedded = false,
@@ -1431,6 +1433,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
 }: {
   block: Block;
   layout: TranscriptLayout;
+  visible?: boolean;
   stickyIndex: number;
   /** True when something already sits directly above this in the turn. */
   underLine?: boolean;
@@ -1457,6 +1460,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
       <UserMessageBlock
         block={block}
         layout={layout}
+        visible={visible ?? true}
         stickyIndex={stickyIndex}
         cwd={cwd}
         onEdit={onEditLastTurn}
@@ -1632,6 +1636,7 @@ function RemoteControlNotice({
 function UserMessageBlock({
   block,
   layout,
+  visible,
   stickyIndex,
   onEdit,
   editing = false,
@@ -1642,6 +1647,7 @@ function UserMessageBlock({
 }: {
   block: Block;
   layout: TranscriptLayout;
+  visible: boolean;
   stickyIndex: number;
   onEdit?: () => void;
   editing?: boolean;
@@ -1700,6 +1706,11 @@ function UserMessageBlock({
         setSingleLine(false);
         return;
       }
+      // Pooled or offscreen turns can measure as zero before they are laid out.
+      if (el.clientWidth === 0) {
+        setSingleLine(false);
+        return;
+      }
       if (!lineHeight) {
         lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight);
       }
@@ -1712,7 +1723,7 @@ function UserMessageBlock({
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [text, roundsSingleLine, expanded]);
+  }, [text, roundsSingleLine, expanded, visible]);
 
   const toggle = () => {
     if (overflows) setExpanded((value) => !value);
@@ -1738,7 +1749,7 @@ function UserMessageBlock({
               : "bg-content/10"
           } ${editing ? "edit-last-turn-bubble" : ""} ${
             chat
-              ? `w-fit max-w-xl ${singleLine ? "rounded-full" : "rounded-xl"}`
+              ? `w-fit max-w-[min(100%,36rem)] ${singleLine ? "rounded-full" : "rounded-xl"}`
               : "rounded-lg border border-content/10"
           }`}
           style={{ zIndex: stickyIndex }}

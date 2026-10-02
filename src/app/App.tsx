@@ -1,4 +1,5 @@
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
+import { useIdleSessionDetach } from "./hooks/useIdleSessionDetach";
 import {
   cancelScheduledFlush,
   scheduleHarnessFlush,
@@ -58,6 +59,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import {
+  startTransition,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -78,6 +81,11 @@ import {
   DeleteSessionDialog,
   type SessionDeleteChoice,
 } from "../features/sessions/ui/DeleteSessionDialog";
+import {
+  setWorktreeFocus,
+  useWorktreeFocus,
+  worktreeFocus,
+} from "../features/source-control/model/worktreeFocus";
 import {
   assertWorktreeFilesClosed,
   createOrchestrationWorktree,
@@ -375,6 +383,7 @@ import {
   planWorkspaceTabClose,
   switchSessionInTab,
   workspaceTabCwd,
+  workspaceTabWorktree,
   focusedWorkspaceTabCwd,
 } from "../features/workspace/model/workspaceTabGroups";
 import { applyAddToChatRequest } from "../features/sessions/model/addChatToWorkspace";
@@ -465,7 +474,7 @@ import { liveAgentsFromSessions } from "../features/sessions/model/liveAgents";
 import { hiddenApprovalNotices } from "../features/notifications/model/approvalToast";
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
 import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
-import { nextUnseenFinishedSessions } from "../features/sessions/model/sessionDone";
+import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
 import {
   loadNotificationsEnabled,
   NOTIFICATION_CLICK_EVENT,
@@ -519,12 +528,14 @@ import {
   ADD_NOTE_TO_CHAT_EVENT,
   NOTES_CHANGED_EVENT,
   composeNoteMessage,
+  loadNotes,
   noteCardMeta,
   upsertNote,
   type NoteComposerCard,
 } from "../features/notes";
 import {
   claimDueAutomations,
+  listAutomations,
   recoverAutomationRuns,
   updateAutomationRun,
   type Automation,
@@ -546,6 +557,7 @@ import { SessionPane } from "../features/sessions/ui/SessionPane";
 import { SessionSurface } from "../features/sessions/ui/SessionSurface";
 import { ProjectTerminalDock } from "../features/terminal/ui/ProjectTerminalDock";
 import { lazySurface } from "../shared/ui/lazySurface";
+import { preloadNavigationWhenIdle } from "./model/preloadNavigation";
 import { requestTranscriptJump } from "../features/sessions/model/transcriptJump";
 import type { SettingsAnchor } from "../features/settings/ui/SettingsView";
 import {
@@ -685,33 +697,45 @@ import {
   type ResumedWorkspace,
 } from "./model/appLifecycle";
 
-const SearchView = lazySurface(async () => {
-  const module = await import("../features/search/ui/SearchView");
-  return { default: module.SearchView };
-});
-const SettingsView = lazySurface(async () => {
-  const module = await import("../features/settings/ui/SettingsView");
-  return { default: module.SettingsView };
-});
-const InboxView = lazySurface(async () => {
-  const module = await import("../features/inbox/ui/InboxView");
-  return { default: module.InboxView };
-});
+const SearchView = lazySurface(
+  async () => {
+    const module = await import("../features/search/ui/SearchView");
+    return { default: module.SearchView };
+  },
+  { suspense: false },
+);
+const SettingsView = lazySurface(
+  async () => {
+    const module = await import("../features/settings/ui/SettingsView");
+    return { default: module.SettingsView };
+  },
+  { suspense: false },
+);
+const InboxView = lazySurface(
+  async () => {
+    const module = await import("../features/inbox/ui/InboxView");
+    return { default: module.InboxView };
+  },
+  { suspense: false },
+);
 const LinkedWorkItemPanel = lazySurface(async () => {
   const module = await import("../features/inbox/ui/InboxView");
   return { default: module.LinkedWorkItemPanel };
 });
-const NotesView = lazySurface(async () => {
-  const module = await import("../features/notes/ui/NotesView");
-  return { default: module.NotesView };
-});
-const AutomationsView = lazySurface(async () => {
-  const module = await import("../features/automations/ui/AutomationsView");
-  return { default: module.AutomationsView };
-});
-
-/** How long a hidden idle session stays attached after it leaves every tab. */
-const SESSION_DETACH_DELAY_MS = 250;
+const NotesView = lazySurface(
+  async () => {
+    const module = await import("../features/notes/ui/NotesView");
+    return { default: module.NotesView };
+  },
+  { suspense: false },
+);
+const AutomationsView = lazySurface(
+  async () => {
+    const module = await import("../features/automations/ui/AutomationsView");
+    return { default: module.AutomationsView };
+  },
+  { suspense: false },
+);
 
 type LinkedWorkItemPanelState = {
   item: LinkedWorkItem;
@@ -907,19 +931,34 @@ function titleTabsEqual(a: TitleTab[], b: TitleTab[]): boolean {
 // Register capabilities before composer hooks choose their discovery strategy.
 registerBuiltinHarnesses();
 
-export default function App({
-  windowTransfer = null,
-  resumed = null,
-  installedUpdate = null,
-  history: bootHistory = [],
-  historyCwd: bootHistoryCwd = null,
-}: {
+type AppProps = {
   windowTransfer?: WindowTransferPayload | null;
   resumed?: ResumedWorkspace | null;
   installedUpdate?: InstalledUpdate | null;
   history?: SessionSummary[];
   historyCwd?: string | null;
-}) {
+};
+
+/** The worktree a project's workspace currently shows. */
+function currentWorkspace(project: string): string {
+  return worktreeFocus(project)?.path ?? project;
+}
+
+export default function App(props: AppProps) {
+  return (
+    <Suspense fallback={null}>
+      <Workspace {...props} />
+    </Suspense>
+  );
+}
+
+function Workspace({
+  windowTransfer = null,
+  resumed = null,
+  installedUpdate = null,
+  history: bootHistory = [],
+  historyCwd: bootHistoryCwd = null,
+}: AppProps) {
   const [projectCwd, setProjectCwd] = useState(
     () =>
       windowTransfer?.projectCwd ??
@@ -1042,6 +1081,13 @@ export default function App({
   const [collapsedProjectRailMode, setCollapsedProjectRailMode] =
     useState<CollapsedProjectRailMode>(loadCollapsedProjectRailMode);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsReturnViewRef = useRef({
+    search: false,
+    inbox: false,
+    notes: false,
+    automations: false,
+    calendar: false,
+  });
   const [updateNotice, setUpdateNotice] = useState(installedUpdate);
   const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
   const [providerSignInRequest, setProviderSignInRequest] = useState<{
@@ -1135,6 +1181,54 @@ export default function App({
   projectTerminalFocusedRef.current = projectTerminalFocused;
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
+
+  const projectWorktree = useWorktreeFocus(projectCwd);
+  /** Tab or session id -> the workspace it was opened or moved in. A tab
+   * belongs to the workspace it was opened in, whatever worktree it runs in:
+   * opening a session, or moving one from its composer, never switches the
+   * workspace. Unpinned tabs (restored ones) group by their own worktree. */
+  // Only the default workspace's tabs were saved, so every restored tab
+  // belongs to it, including one its composer moved to a worktree.
+  const [restoredPins] = useState(
+    () =>
+      new Map(
+        tabs.flatMap((tab) => {
+          const project = workspaceTabCwd(tab, sessions);
+          return project && !isRemoteProjectPath(project)
+            ? [[tab.id, project] as const]
+            : [];
+        }),
+      ),
+  );
+  const workspacePins = useRef(restoredPins);
+  const tabWorkspace = useCallback(
+    (tab: WorkspaceTab, list: readonly Session[]) => {
+      const pinnedTab = workspacePins.current.get(tab.id);
+      if (pinnedTab) return pinnedTab;
+      for (const id of leafIds(tab.layout)) {
+        const pinned = workspacePins.current.get(id);
+        if (pinned) return pinned;
+      }
+      return workspaceTabWorktree(tab, list);
+    },
+    [],
+  );
+  const tabWorktreeOf = useCallback(
+    (tab: WorkspaceTab) => tabWorkspace(tab, sessionsRef.current),
+    [tabWorkspace],
+  );
+  /** Saved tabs: the app reopens on each project's default workspace, so
+   * tabs from other worktrees close with it instead of piling up. */
+  const keepWorkspaceTab = useCallback(
+    (tab: WorkspaceTab) => {
+      const project = workspaceTabCwd(tab, sessionsRef.current);
+      if (!project || isRemoteProjectPath(project)) return true;
+      const workspace = tabWorkspace(tab, sessionsRef.current);
+      return !workspace || sameProjectPath(workspace, project);
+    },
+    [tabWorkspace],
+  );
+
   const projectCwdRef = useRef(projectCwd);
   projectCwdRef.current = projectCwd;
   const searchViewOpenRef = useRef(searchViewOpen);
@@ -1191,6 +1285,20 @@ export default function App({
     if (!notesEnabled) setNotesViewOpen(false);
   }, [notesEnabled]);
 
+  useEffect(
+    () =>
+      preloadNavigationWhenIdle([
+        InboxView.preload,
+        AutomationsView.preload,
+        listAutomations,
+        ...(notesEnabled ? [NotesView.preload, loadNotes] : []),
+      ]),
+    [notesEnabled],
+  );
+
+  /** Set while the project rail switches projects, whose landing tab is
+   * incidental and gives way to the worktree picked in that project. */
+  const projectRailSwitch = useRef(false);
   const projectReturnRef = useRef<ProjectReturnMemory>(
     resumed?.projectReturnMemory ?? new Map(),
   );
@@ -1693,23 +1801,11 @@ export default function App({
   useEffect(() => {
     if (loadNotificationsEnabled()) void probeNotificationPermission();
   }, []);
-  const busyForDoneRef = useRef(busySessionIds);
-  const focusedForDoneRef = useRef(activeSessionId);
-  const unseenFinishedRef = useRef<Set<string>>(new Set());
-  if (
-    busyForDoneRef.current !== busySessionIds ||
-    focusedForDoneRef.current !== activeSessionId
-  ) {
-    unseenFinishedRef.current = nextUnseenFinishedSessions({
-      previousBusyIds: busyForDoneRef.current,
-      busyIds: busySessionIds,
-      previousUnseenIds: unseenFinishedRef.current,
-      focusedSessionId: activeSessionId,
-    });
-    busyForDoneRef.current = busySessionIds;
-    focusedForDoneRef.current = activeSessionId;
-  }
-  const unseenFinishedIds = unseenFinishedRef.current;
+  const unseenFinishedIds = useUnseenFinishedSessions(
+    sessions,
+    busySessionIds,
+    activeSessionId,
+  );
 
   const liveAgents = useMemo(
     () =>
@@ -1797,6 +1893,7 @@ export default function App({
       readProjectReturnMemory,
       flushHarnessEvents,
       () => lastDockSideRef.current,
+      keepWorkspaceTab,
     );
     void getCurrentWindow()
       .onCloseRequested((event) => {
@@ -1824,6 +1921,7 @@ export default function App({
           "unload",
           projectTerminalsRef.current,
           lastDockSideRef.current ?? undefined,
+          keepWorkspaceTab,
         ).finally(() => {
           void (toTray ? hideCurrentWindow() : closeCurrentWindow());
         });
@@ -1835,7 +1933,7 @@ export default function App({
       releaseQuit();
       unlistenClose?.();
     };
-  }, [flushHarnessEvents, readProjectReturnMemory]);
+  }, [flushHarnessEvents, keepWorkspaceTab, readProjectReturnMemory]);
 
   const refreshHistory = useCallback(async (cwd: string) => {
     if (!cwd || cwd === "~") return;
@@ -2013,6 +2111,7 @@ export default function App({
       }),
       projectTerminals,
       lastDockSide ?? undefined,
+      keepWorkspaceTab,
     );
     const key = workspaceSnapshotKey(snapshot);
     if (workspaceSyncKey.current === key) return;
@@ -2029,6 +2128,8 @@ export default function App({
     projectTerminals,
     lastDockSide,
     windowTransfer,
+    keepWorkspaceTab,
+    projectWorktree?.path,
   ]);
 
   useEffect(() => {
@@ -2060,90 +2161,20 @@ export default function App({
   // Tabs are views. Hidden idle sessions drop their child. A visible session
   // keeps its child for a few minutes after a turn so follow-ups stay instant,
   // then parks it and resumes on the next prompt.
-  // Dropping a session re-renders the whole app, so it waits until a switch
-  // has painted, and a burst of switches pays for it once.
-  const detachInputs = useRef({ orchestrationRuns, liveAgentsEnabled });
-  detachInputs.current = { orchestrationRuns, liveAgentsEnabled };
-  const detachTimer = useRef<number | null>(null);
-  const detachIdleSessions = useCallback(() => {
-    detachTimer.current = null;
-    const sessions = sessionsRef.current;
-    const { orchestrationRuns, liveAgentsEnabled } = detachInputs.current;
-    const visibleIds = openSessionIds(tabsRef.current);
-    // Inbox owns these panes independently of project tabs. Keep their drafts
-    // and attachments mounted when the panel closes or switches items.
-    for (const session of sessions) {
-      if (session.inboxAsk) visibleIds.add(session.id);
-    }
-    // Internal workers stay attached to the lead, even while idle between
-    // turns. They must not be discarded merely because they have no tab.
-    for (const session of sessions) {
-      if (
-        session.orchestrationLeadId &&
-        (visibleIds.has(session.orchestrationLeadId) ||
-          orchestrationRuns.some(
-            (run) =>
-              run.leadId === session.orchestrationLeadId &&
-              ["active", "paused"].includes(run.status),
-          ))
-      )
-        visibleIds.add(session.id);
-    }
-    for (const sessionId of visibleIds) {
-      openingSessionIds.current.delete(sessionId);
-      loadedSessionCache.current.delete(sessionId);
-    }
-    const keepUnseen = liveAgentsEnabled;
-    const idleDetached = sessions.filter(
-      (session) =>
-        !visibleIds.has(session.id) &&
-        !session.busy &&
-        !openingSessionIds.current.has(session.id) &&
-        !(keepUnseen && unseenFinishedRef.current.has(session.id)),
-    );
-    if (idleDetached.length === 0) return;
-    for (const session of idleDetached) {
-      if (skipForgetSessionIds.current.has(session.id)) continue;
-      if (shouldPersistSession(session)) {
-        rememberLoadedSession(loadedSessionCache.current, session);
-      }
-      persistSession(session);
-      for (const harness of sessionChildHarnesses(session)) {
-        void forgetHarnessSession(harness, session.id);
-      }
-    }
-    setSessions((prev) =>
-      prev.filter(
-        (session) =>
-          visibleIds.has(session.id) ||
-          session.busy ||
-          openingSessionIds.current.has(session.id) ||
-          (keepUnseen && unseenFinishedRef.current.has(session.id)) ||
-          skipForgetSessionIds.current.has(session.id),
-      ),
-    );
-  }, [persistSession]);
-
-  useEffect(() => {
-    if (detachTimer.current != null) return;
-    detachTimer.current = window.setTimeout(
-      detachIdleSessions,
-      SESSION_DETACH_DELAY_MS,
-    );
-  }, [
+  useIdleSessionDetach({
     sessions,
+    sessionsRef,
     tabs,
-    liveAgentsEnabled,
+    tabsRef,
     orchestrationRuns,
-    detachIdleSessions,
-  ]);
-
-  useEffect(
-    () => () => {
-      if (detachTimer.current != null) window.clearTimeout(detachTimer.current);
-    },
-    [],
-  );
+    liveAgentsEnabled,
+    unseenFinishedIds,
+    openingSessionIds,
+    loadedSessionCache,
+    skipForgetSessionIds,
+    persistSession,
+    setSessions,
+  });
 
   const activateTab = useCallback((id: string, paneId?: string) => {
     const tab = tabsRef.current.find((entry) => entry.id === id);
@@ -2292,7 +2323,13 @@ export default function App({
     setAutomationsViewOpen(false);
     setCalendarViewOpen(false);
     const cwd = active?.cwd ?? sessionDefaults?.cwd ?? projectCwd;
-    const session = newDefaultSession(cwd, sessionDefaults?.runtimeMode);
+    const focus = worktreeFocus(cwd);
+    const session = {
+      ...newDefaultSession(cwd, sessionDefaults?.runtimeMode),
+      ...(focus && pathKey(focus.path) !== pathKey(cwd)
+        ? { worktreeCwd: focus.path, branch: focus.branch ?? undefined }
+        : {}),
+    };
     const tab = newTab(session.id);
     setSessions((prev) => [...prev, session]);
     appendTab(tab, cwd);
@@ -2820,6 +2857,7 @@ export default function App({
         sessions: sessionsRef.current,
         closingTabId: id,
         scope: tabCloseScope,
+        worktreeOf: tabWorktreeOf,
       });
       if (closePlan.action === "keep") return;
       const closing = current[index];
@@ -2997,6 +3035,7 @@ export default function App({
               sessions: sessionsRef.current,
               closingTabId: tab.id,
               scope: tabCloseScope,
+              worktreeOf: tabWorktreeOf,
             });
             if (closePlan.action === "close") {
               onCloseTab(
@@ -3172,13 +3211,33 @@ export default function App({
           rememberRemotePendingWorktree(shellId);
         }
 
-        const session = newSession(
-          oldSession.harness,
-          oldSession.cwd,
-          oldSession.model,
-          oldSession.runtimeMode,
-          oldSession.modelSettings,
-        );
+        // The blank replacement stays in the tab's worktree, so clearing the
+        // last tab there does not switch the workspace back to the project.
+        const workspace = tabWorkspace(tab, sessionsRef.current);
+        const focus = worktreeFocus(oldSession.cwd);
+        const session = {
+          ...newSession(
+            oldSession.harness,
+            oldSession.cwd,
+            oldSession.model,
+            oldSession.runtimeMode,
+            oldSession.modelSettings,
+          ),
+          ...(workspace && !sameProjectPath(workspace, oldSession.cwd)
+            ? {
+                worktreeCwd: workspace,
+                branch:
+                  (focus && sameProjectPath(focus.path, workspace)
+                    ? focus.branch
+                    : undefined) ??
+                  (oldSession.worktreeCwd &&
+                  sameProjectPath(oldSession.worktreeCwd, workspace)
+                    ? oldSession.branch
+                    : undefined) ??
+                  undefined,
+              }
+            : {}),
+        };
 
         setSessions((prev) => [...prev, session]);
         setDirtyFiles((prev) => {
@@ -3229,6 +3288,7 @@ export default function App({
         sessions: sessionsRef.current,
         closingTabId: tab.id,
         scope: tabCloseScope,
+        worktreeOf: tabWorktreeOf,
       });
       if (closePlan.action === "keep") onClearTabSession(tab.id);
       else onCloseTab(tab.id);
@@ -3264,6 +3324,7 @@ export default function App({
           sessions: sessionsRef.current,
           closingTabId: tab.id,
           scope: tabCloseScope,
+          worktreeOf: tabWorktreeOf,
         });
         if (closePlan.action === "close") {
           onCloseTab(tab.id);
@@ -3393,6 +3454,7 @@ export default function App({
           sessions: sessionsRef.current,
           closingTabId: activeTab.id,
           scope: tabCloseScope,
+          worktreeOf: tabWorktreeOf,
         });
         if (closePlan.action === "keep") onClearTabSession(activeTab.id);
         else onCloseTab(activeTab.id);
@@ -3435,6 +3497,7 @@ export default function App({
         sessions: sessionsRef.current,
         closingTabId: id,
         scope: tabCloseScope,
+        worktreeOf: tabWorktreeOf,
       });
       if (closePlan.action === "keep" && id === activeTabIdRef.current) {
         onClosePane();
@@ -3445,13 +3508,44 @@ export default function App({
     [onClosePane, onCloseTab, tabCloseScope],
   );
 
+  /** Open tabs per workspace in the sidebar's project, keyed by worktree
+   * path, so the switcher can show what each worktree still has open. */
+  const worktreeTabStats = useMemo(() => {
+    const stats = new Map<string, { tabs: number; busy: boolean }>();
+    if (!sidebarCwd || sidebarCwd === "~" || isRemoteProjectPath(sidebarCwd))
+      return stats;
+    for (const tab of filterTabsForProject(tabs, sessions, sidebarCwd)) {
+      const workspace = tabWorkspace(tab, sessions) ?? sidebarCwd;
+      const key = pathKey(workspace);
+      const entry = stats.get(key) ?? { tabs: 0, busy: false };
+      entry.tabs += 1;
+      entry.busy ||= leafIds(tab.layout).some(
+        (id) => sessions.find((session) => session.id === id)?.busy,
+      );
+      stats.set(key, entry);
+    }
+    return stats;
+  }, [tabs, sessions, sidebarCwd, tabWorkspace]);
   const deckProjectTabs = useMemo(() => {
     // A projectless session belongs to no project, so it stands on its own
     // rather than trailing the last project's tabs.
     const active = tabs.find((tab) => tab.id === activeTabId);
     if (active && !workspaceTabCwd(active, sessions)) return [active];
-    return filterTabsForProject(tabs, sessions, projectCwd);
-  }, [activeTabId, tabs, sessions, projectCwd]);
+    // Each worktree keeps its own tabs; the others stay open, just hidden.
+    const worktree = projectWorktree?.path ?? projectCwd;
+    return filterTabsForProject(tabs, sessions, projectCwd).filter((tab) => {
+      if (tab.id === activeTabId) return true;
+      const workspace = tabWorkspace(tab, sessions);
+      return !workspace || sameProjectPath(workspace, worktree);
+    });
+  }, [
+    activeTabId,
+    tabs,
+    sessions,
+    projectCwd,
+    projectWorktree?.path,
+    tabWorkspace,
+  ]);
 
   const onNext = useCallback(() => {
     const index = deckProjectTabs.findIndex((t) => t.id === activeTabId);
@@ -3590,8 +3684,8 @@ export default function App({
     [onOpenDiff],
   );
 
-  /** Stack every working-tree change in one review, whatever the diff-view setting. */
-  const onOpenAllChanges = useCallback(() => {
+  /** Stack one section's working-tree changes in one review, whatever the diff-view setting. */
+  const onOpenAllChanges = useCallback((kind: GitFileDiffKind) => {
     setTabs((prev) =>
       prev.map((tab) =>
         tab.id === activeTabId
@@ -3599,7 +3693,7 @@ export default function App({
               tab,
               gitCwdRef.current,
               undefined,
-              undefined,
+              kind,
               sidebarCwdRef.current,
             )
           : tab,
@@ -5106,7 +5200,7 @@ export default function App({
   );
 
   const onWorktreeChange = useCallback(
-    async (sessionId: string, tree: Worktree) => {
+    async (sessionId: string, tree: Worktree, fromComposer = false) => {
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       if (
         !current ||
@@ -5172,6 +5266,11 @@ export default function App({
           // Leave the original conversation, checkpoints, and live provider
           // context attached to the files they describe.
           const tab = newTab(selected.id);
+          if (fromComposer)
+            workspacePins.current.set(
+              selected.id,
+              currentWorkspace(source.cwd),
+            );
           sessionsRef.current = [...sessionsRef.current, selected];
           setSessions(sessionsRef.current);
           appendTab(tab, selected.cwd);
@@ -5195,6 +5294,12 @@ export default function App({
           );
         }
         const next = sessionInWorktree(latest, target);
+        if (fromComposer)
+          workspacePins.current.set(
+            sessionId,
+            currentWorkspace(latest.cwd),
+          );
+        else workspacePins.current.delete(sessionId);
         if (latest.worktreeRemoved)
           await keepSessionChanges(sessionId, target.path);
         pendingPersist.current.delete(sessionId);
@@ -5213,6 +5318,121 @@ export default function App({
     },
     [appendTab, invalidateLoadedSession, refreshHistory],
   );
+
+  const onComposerWorktreeChange = useCallback(
+    (sessionId: string, tree: Worktree) =>
+      onWorktreeChange(sessionId, tree, true),
+    [onWorktreeChange],
+  );
+
+  // The picked worktree is the workspace: its tabs are the ones shown. Picking
+  // another one returns to the tab last used there, carries a blank session
+  // over, or opens a new one.
+  const worktreeTabMemory = useRef(new Map<string, string>());
+  const scopedProject =
+    projectCwd !== "~" && !isRemoteProjectPath(projectCwd) ? projectCwd : null;
+  const scopeWorktree = projectWorktree?.path ?? projectCwd;
+  const scopeKey = `${pathKey(projectCwd)}\0${pathKey(scopeWorktree)}`;
+  const activeTabWorktree =
+    activeTab && scopedProject ? tabWorkspace(activeTab, sessions) : null;
+  const activeScopeKey = `${activeTabId}\0${activeTabWorktree ?? ""}`;
+  const lastScope = useRef({ scopeKey, activeScopeKey });
+  useEffect(() => {
+    const previous = lastScope.current;
+    lastScope.current = { scopeKey, activeScopeKey };
+    if (!scopedProject || !activeTab) return;
+    const tabProject = workspaceTabCwd(activeTab, sessionsRef.current);
+    if (!tabProject || !sameProjectPath(tabProject, scopedProject)) return;
+    if (!activeTabWorktree || sameProjectPath(activeTabWorktree, scopeWorktree)) {
+      worktreeTabMemory.current.set(scopeKey, activeTab.id);
+      return;
+    }
+    const moveBlankHere = () => {
+      if (!active || active.busy || !isBlankSession(active)) return false;
+      workspacePins.current.delete(activeTab.id);
+      void onWorktreeChange(active.id, {
+        path: scopeWorktree,
+        branch: projectWorktree?.branch ?? null,
+        head: "",
+        isMain: !projectWorktree,
+        locked: false,
+        prunable: false,
+        missing: false,
+        dirty: null,
+        unpushed: null,
+        sessionIds: [],
+      }).catch(() => undefined);
+      return true;
+    };
+    const joinWorkspace = () => {
+      workspacePins.current.set(activeTab.id, scopeWorktree);
+      worktreeTabMemory.current.set(scopeKey, activeTab.id);
+    };
+    const sameProject =
+      previous.scopeKey.split("\0")[0] === pathKey(scopedProject);
+    const scopedTabs = () =>
+      filterTabsForProject(
+        tabsRef.current,
+        sessionsRef.current,
+        scopedProject,
+      ).filter((tab) => {
+        const workspace = tabWorkspace(tab, sessionsRef.current);
+        return !workspace || sameProjectPath(workspace, scopeWorktree);
+      });
+    const lastUsedTab = () => {
+      const scoped = scopedTabs();
+      const remembered = worktreeTabMemory.current.get(scopeKey);
+      return (
+        scoped.find((tab) => tab.id === remembered) ?? scoped[scoped.length - 1]
+      );
+    };
+    if (!sameProject) {
+      // Back in a project: its picked worktree wins over whichever tab the
+      // switch landed on. From the project rail that tab is incidental (a
+      // reused blank, or the project's first tab), so return to the worktree's
+      // own; a session opened directly (inbox, search) joins it instead.
+      const fromRail = projectRailSwitch.current;
+      projectRailSwitch.current = false;
+      const target = fromRail ? lastUsedTab() : undefined;
+      if (target) activateTab(target.id);
+      else if (!moveBlankHere()) joinWorkspace();
+      return;
+    }
+    const picked =
+      previous.scopeKey !== scopeKey &&
+      previous.activeScopeKey === activeScopeKey;
+    if (!picked && previous.activeScopeKey !== activeScopeKey) {
+      // Opened from the session list, inbox or search: the tab joins the
+      // workspace on screen, as it did before worktree scoping.
+      joinWorkspace();
+      return;
+    }
+    if (!picked) {
+      // Startup: nothing on screen to keep, so the workspace follows the tab.
+      setWorktreeFocus(
+        scopedProject,
+        sameProjectPath(activeTabWorktree, scopedProject)
+          ? undefined
+          : {
+              path: activeTabWorktree,
+              branch:
+                sessionsRef.current.find(
+                  (session) =>
+                    !!session.worktreeCwd &&
+                    sameProjectPath(session.worktreeCwd, activeTabWorktree),
+                )?.branch ?? null,
+            },
+      );
+      return;
+    }
+    const target = lastUsedTab();
+    if (target) {
+      activateTab(target.id);
+      return;
+    }
+    if (moveBlankHere()) return;
+    onNew();
+  }, [scopeKey, activeScopeKey]);
 
   /**
    * Open a run of folders from one snapshot, committed in a single transition.
@@ -5293,7 +5513,10 @@ export default function App({
   );
 
   const onSelectProject = useCallback(
-    (path: string) => openProjects([path]),
+    (path: string) => {
+      projectRailSwitch.current = !sameProjectPath(path, projectCwdRef.current);
+      openProjects([path]);
+    },
     [openProjects],
   );
 
@@ -6618,6 +6841,10 @@ export default function App({
             false,
           );
           workCwd = tree.path;
+          workspacePins.current.set(
+            sessionId,
+            currentWorkspace(current.cwd),
+          );
           if (proposalDraft)
             proposalDraft = { ...proposalDraft, checkoutCwd: tree.path };
           setSessions((prev) =>
@@ -9794,14 +10021,16 @@ export default function App({
   }, []);
 
   const onOpenSearch = useCallback(() => {
-    setFilePickerOpen(false);
-    setSettingsOpen(false);
-    setInboxViewOpen(false);
-    setNotesViewOpen(false);
-    setAutomationsViewOpen(false);
-    setCalendarViewOpen(false);
-    setSearchViewOpen(true);
-    setSearchViewFocusToken((token) => token + 1);
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
+      setSearchViewOpen(true);
+      setSearchViewFocusToken((token) => token + 1);
+    });
   }, []);
 
   const onLeaveSearch = useCallback(() => {
@@ -9809,13 +10038,15 @@ export default function App({
   }, []);
 
   const onOpenInbox = useCallback(() => {
-    setFilePickerOpen(false);
-    setSettingsOpen(false);
-    setSearchViewOpen(false);
-    setNotesViewOpen(false);
-    setAutomationsViewOpen(false);
-    setCalendarViewOpen(false);
-    setInboxViewOpen(true);
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
+      setInboxViewOpen(true);
+    });
   }, []);
 
   const onOpenLinkedWorkItem = useCallback(
@@ -9924,13 +10155,15 @@ export default function App({
 
   const onOpenNotes = useCallback(() => {
     if (!loadNotesEnabled()) return;
-    setFilePickerOpen(false);
-    setSettingsOpen(false);
-    setSearchViewOpen(false);
-    setInboxViewOpen(false);
-    setAutomationsViewOpen(false);
-    setCalendarViewOpen(false);
-    setNotesViewOpen(true);
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setAutomationsViewOpen(false);
+      setCalendarViewOpen(false);
+      setNotesViewOpen(true);
+    });
   }, []);
 
   const onLeaveNotes = useCallback(() => {
@@ -9938,14 +10171,16 @@ export default function App({
   }, []);
 
   const onOpenAutomations = useCallback(() => {
-    setFilePickerOpen(false);
-    setSettingsOpen(false);
-    setSearchViewOpen(false);
-    setInboxViewOpen(false);
-    setNotesViewOpen(false);
-    setAutomationsViewOpen(true);
-    setAssistantsPane(false);
-    setCalendarViewOpen(false);
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(true);
+      setAssistantsPane(false);
+      setCalendarViewOpen(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -9987,14 +10222,15 @@ export default function App({
   );
 
   const onOpenCalendar = useCallback(() => {
-    setFilePickerOpen(false);
-    setSettingsOpen(false);
-    setSearchViewOpen(false);
-    setInboxViewOpen(false);
-    setNotesViewOpen(false);
-    setAutomationsViewOpen(false);
-    setCalendarViewOpen(false);
-    setCalendarViewOpen(true);
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setCalendarViewOpen(true);
+    });
   }, []);
 
   const onLeaveCalendar = useCallback(() => {
@@ -10028,19 +10264,30 @@ export default function App({
 
   const openSettings = useCallback(
     (section?: SettingsSectionId, anchor?: SettingsAnchor) => {
-      setFilePickerOpen(false);
-      setSearchViewOpen(false);
-      setInboxViewOpen(false);
-      setNotesViewOpen(false);
-      setAutomationsViewOpen(false);
-      setCalendarViewOpen(false);
-      if (section) {
-        setSettingsSection(section);
-        saveSettingsSection(section);
+      if (!settingsOpenRef.current) {
+        settingsReturnViewRef.current = {
+          search: searchViewOpenRef.current,
+          inbox: inboxViewOpenRef.current,
+          notes: notesViewOpenRef.current,
+          automations: automationsViewOpenRef.current,
+          calendar: calendarViewOpenRef.current,
+        };
       }
-      setSettingsAnchor(anchor ?? null);
-      setNotificationProjectPath(null);
-      setSettingsOpen(true);
+      startTransition(() => {
+        setFilePickerOpen(false);
+        setSearchViewOpen(false);
+        setInboxViewOpen(false);
+        setNotesViewOpen(false);
+        setAutomationsViewOpen(false);
+        setCalendarViewOpen(false);
+        if (section) {
+          setSettingsSection(section);
+          saveSettingsSection(section);
+        }
+        setSettingsAnchor(anchor ?? null);
+        setNotificationProjectPath(null);
+        setSettingsOpen(true);
+      });
     },
     [],
   );
@@ -10080,6 +10327,12 @@ export default function App({
   );
 
   const onCloseSettings = useCallback(() => {
+    const returnView = settingsReturnViewRef.current;
+    setSearchViewOpen(returnView.search);
+    setInboxViewOpen(returnView.inbox);
+    setNotesViewOpen(returnView.notes && loadNotesEnabled());
+    setAutomationsViewOpen(returnView.automations);
+    setCalendarViewOpen(returnView.calendar);
     setSettingsOpen(false);
   }, []);
 
@@ -10098,7 +10351,7 @@ export default function App({
 
   const onRailBack = useCallback(() => {
     if (settingsOpen) {
-      setSettingsOpen(false);
+      onCloseSettings();
       return;
     }
     if (searchViewOpen) {
@@ -10124,6 +10377,7 @@ export default function App({
     }
     onVisitBack();
   }, [
+    onCloseSettings,
     onVisitBack,
     searchViewOpen,
     settingsOpen,
@@ -10715,7 +10969,7 @@ export default function App({
     onClose: onClosePane,
     onCwdChange,
     onBranchChange,
-    onWorktreeChange,
+    onWorktreeChange: onComposerWorktreeChange,
     onRemoteSnapshot,
     onWorkspaceModeChange,
     onWorktreeBaseChange,
@@ -10817,6 +11071,7 @@ export default function App({
             <Sidebar
               cwd={sidebarCwd}
               gitCwd={gitCwd}
+              worktreeTabStats={worktreeTabStats}
               explorerRootLabel={explorerRootLabel}
               open={sessionSidebarOpen}
               tab={sidebarTab}

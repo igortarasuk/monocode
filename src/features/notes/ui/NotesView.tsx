@@ -32,6 +32,7 @@ import {
   notePreview,
   noteSourceProject,
   noteTitle,
+  peekNotes,
   upsertNote,
   requestAddNoteToChat,
   type Note,
@@ -114,12 +115,19 @@ export function NotesView({
       rememberedWidth = width;
     },
   });
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState<Note[]>(() => peekNotes() ?? []);
+  const [loading, setLoading] = useState(() => peekNotes() === null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [todoOnly, setTodoOnly] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(rememberedNoteId);
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const cached = peekNotes();
+    return (
+      cached?.find((note) => note.id === rememberedNoteId)?.id ??
+      cached?.[0]?.id ??
+      rememberedNoteId
+    );
+  });
   const [creating, setCreating] = useState(false);
   const logos = useTabGroupLogos();
   const [groupMascots] = useState(loadTabGroupMascots);
@@ -968,7 +976,7 @@ function NoteEditor({
                 scheduleSave();
               }}
             >
-              <AgentMarkdown text={body} cwd={sourceCwd} />
+              <AgentMarkdown text={body} cwd={sourceCwd} hardBreaks />
             </TodoCheckboxes>
           ) : (
             <p className="text-[13px] text-content/45">No description</p>
