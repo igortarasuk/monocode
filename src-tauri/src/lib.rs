@@ -34,6 +34,7 @@ mod pasteboard;
 mod path_probe;
 mod pi_usage;
 mod planning;
+mod project_knowledge;
 mod project_logo;
 mod pty;
 #[cfg(target_os = "macos")]
@@ -298,8 +299,8 @@ pub fn run() {
             notifications::show_notification,
             notifications::open_notification_settings,
             auto_model::auto_model_project,
-            auto_model::auto_model_remember,
-            auto_model::auto_model_set_memory,
+            project_knowledge::project_knowledge_sync,
+            project_knowledge::project_knowledge_record,
             auto_model::auto_model_session_set,
             auto_model::auto_model_session_get,
             reminders::reminder_list,

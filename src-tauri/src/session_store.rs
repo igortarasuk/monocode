@@ -955,6 +955,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::automations::ensure_tables(conn)?;
     crate::planning::ensure_tables(conn)?;
     crate::auto_model::ensure_tables(conn)?;
+    crate::project_knowledge::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
     Ok(())
 }

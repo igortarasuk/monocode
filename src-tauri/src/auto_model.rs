@@ -1,7 +1,8 @@
 //! Auto model: what Monochrome knows about a project and its sessions, so a
 //! small model can route each task to a fitting model. Lives in the session
-//! database: a scanned project profile, durable project memory, and the task
-//! each auto-routed session was started for.
+//! database: a scanned project profile, notes carried over from sessions
+//! (rendered into the project knowledge, see `project_knowledge.rs`), and the
+//! task each auto-routed session was started for.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -20,8 +21,7 @@ const MAX_LANGUAGES: usize = 6;
 const MAX_MEMORY: usize = 40;
 const MAX_MEMORY_ENTRY: usize = 400;
 const MAX_FIELD: usize = 600;
-const SKILL_DIR: &str = ".claude/skills/project-memory";
-const CLASSIFIER_SKILL: &str = ".claude/skills/auto-model/SKILL.md";
+const CLASSIFIER_SKILL: &str = ".monochrome/routing.md";
 const MAX_SKILL_BYTES: u64 = 16 << 10;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -105,7 +105,7 @@ pub(crate) fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 /// Same identity the frontend uses for a project: no trailing separators.
-fn project_key(cwd: &str) -> Result<String, String> {
+pub(crate) fn project_key(cwd: &str) -> Result<String, String> {
     let trimmed = cwd.trim();
     if trimmed.is_empty() || trimmed == "~" {
         return Err("Auto model needs a project folder.".into());
@@ -402,7 +402,7 @@ fn merge_memory(existing: Vec<String>, entries: &[String]) -> Vec<String> {
     merged
 }
 
-fn remember(
+pub(crate) fn remember(
     conn: &Connection,
     key: &str,
     entries: &[String],
@@ -420,28 +420,6 @@ fn remember(
     )
     .map_err(|error| error.to_string())?;
     Ok(merged)
-}
-
-fn skill_text(memory: &[String]) -> String {
-    let mut text = String::from(
-        "---\nname: project-memory\ndescription: Facts about this project carried over from earlier agent sessions. Read before starting a task here.\n---\n\n# Project memory\n\nWritten by Monochrome when a session is restarted for a new task. Treat these\nas notes from earlier sessions: verify against the code before relying on them.\n\n",
-    );
-    for entry in memory {
-        text.push_str("- ");
-        text.push_str(entry);
-        text.push('\n');
-    }
-    text
-}
-
-/// Mirror the stored memory into a skill agents discover on their own.
-fn write_skill(root: &Path, memory: &[String]) -> Result<(), String> {
-    let dir = root.join(SKILL_DIR);
-    if memory.is_empty() {
-        return Ok(());
-    }
-    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    fs::write(dir.join("SKILL.md"), skill_text(memory)).map_err(|error| error.to_string())
 }
 
 fn save_session(conn: &Connection, task: &SessionTask, now: i64) -> Result<(), String> {
@@ -531,56 +509,6 @@ pub fn auto_model_project(
         stats,
         classifier_skill,
     })
-}
-
-/// Add durable facts to the project memory and refresh its skill file.
-#[tauri::command(async)]
-pub fn auto_model_remember(
-    store: State<'_, SessionStore>,
-    cwd: String,
-    entries: Vec<String>,
-) -> Result<Vec<String>, String> {
-    let key = project_key(&cwd)?;
-    let memory = {
-        let conn = store.lock_conn()?;
-        remember(&conn, &key, &entries, now_millis())?
-    };
-    let root = PathBuf::from(&key);
-    if root.is_dir() {
-        write_skill(&root, &memory)?;
-    }
-    Ok(memory)
-}
-
-/// Replace the project memory (Settings edits) and refresh its skill file.
-#[tauri::command(async)]
-pub fn auto_model_set_memory(
-    store: State<'_, SessionStore>,
-    cwd: String,
-    entries: Vec<String>,
-) -> Result<Vec<String>, String> {
-    let key = project_key(&cwd)?;
-    let memory = merge_memory(Vec::new(), &entries);
-    let json = serde_json::to_string(&memory).map_err(|error| error.to_string())?;
-    {
-        let conn = store.lock_conn()?;
-        conn.execute(
-            "INSERT INTO auto_model_projects (project_key, memory_json, updated_at)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(project_key) DO UPDATE SET
-               memory_json = excluded.memory_json, updated_at = excluded.updated_at",
-            params![key, json, now_millis()],
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    let root = PathBuf::from(&key);
-    let skill = root.join(SKILL_DIR).join("SKILL.md");
-    if memory.is_empty() {
-        let _ = fs::remove_file(skill);
-    } else if root.is_dir() {
-        write_skill(&root, &memory)?;
-    }
-    Ok(memory)
 }
 
 #[tauri::command(async)]
@@ -722,16 +650,6 @@ mod tests {
         assert_eq!(stored.summary, "Fix the login redirect");
         assert!(load_session(&conn, "missing").unwrap().is_none());
         assert!(save_session(&conn, &task("../x", "code", None), 5).is_err());
-    }
-
-    #[test]
-    fn writes_memory_as_a_skill() {
-        let dir = scratch();
-        write_skill(&dir, &["Use pnpm".into()]).unwrap();
-        let text = fs::read_to_string(dir.join(SKILL_DIR).join("SKILL.md")).unwrap();
-        assert!(text.starts_with("---\nname: project-memory\n"));
-        assert!(text.ends_with("- Use pnpm\n"));
-        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
