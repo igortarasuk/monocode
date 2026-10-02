@@ -108,6 +108,7 @@ import {
   type SlashToken,
 } from "../../skills/model/skills";
 import { AccessPicker } from "./AccessPicker";
+import { AutoModelToggle } from "../../auto-model/ui/AutoModelToggle";
 import { ComposerRunner } from "./ComposerRunner";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
@@ -2608,6 +2609,9 @@ export function Composer({
                   }
                   onClose={() => ref.current?.focus()}
                 />
+                {sessionId && !compact ? (
+                  <AutoModelToggle sessionId={sessionId} />
+                ) : null}
                 {controlsBeside ? (
                   <ModelControlPills
                     harness={harness}
