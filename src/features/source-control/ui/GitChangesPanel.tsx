@@ -83,6 +83,8 @@ import { MOD } from "../../../platform/tauri/platform";
 import { applyProjectDiffStats } from "../hooks/useProjectDiffStats";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { runVulnCheck } from "../model/vulnCheck";
+import { VulnCheckStatus } from "./VulnCheckStatus";
 
 const GIT_POLL_MS = 2000;
 
@@ -205,6 +207,7 @@ export function GitChangesPanel({
             {status}
           </span>
         ) : null}
+        <VulnCheckStatus cwd={cwd} />
         {index?.branch ? (
           <div
             ref={branchMenuRef}
@@ -630,6 +633,7 @@ function ChangedFiles({
     setMenuOpen(false);
     try {
       await gitCommit(cwd, message, amend);
+      void runVulnCheck(cwd);
       if (push || createPr) {
         await gitPush(cwd);
         recordPrActivity();

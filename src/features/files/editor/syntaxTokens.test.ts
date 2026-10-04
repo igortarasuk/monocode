@@ -10,6 +10,7 @@ import {
 const KEYWORD_DARK = "#ff8ffd";
 const STRING_DARK = "#b4fa72";
 const COMMENT_DARK = "#fefdc2";
+const PROPERTY_DARK = "#d0d1fe";
 
 describe("highlightSource", () => {
   it("colors TypeScript keywords, strings, and comments", () => {
@@ -27,6 +28,44 @@ describe("highlightSource", () => {
     const language = await languageForPath("settings.jsonc");
     const lines = highlightSource('{\n  // note\n  "a": 1\n}', language, "dark");
     expect(token(lines[1], "// note")?.color).toBe(COMMENT_DARK);
+  });
+
+  it("colors Terraform blocks, attributes, strings, and comments", async () => {
+    const language = await languageForPath("infra/main.tf");
+    const lines = highlightSource(
+      'resource "aws_instance" "web" {\n  ami = var.image # note\n  name = "web-${count.index}"\n}',
+      language,
+      "dark",
+    );
+    expect(token(lines[0], "resource")?.color).toBe(KEYWORD_DARK);
+    expect(token(lines[0], '"aws_instance"')?.color).toBe(STRING_DARK);
+    expect(token(lines[1], "ami")?.color).toBe(PROPERTY_DARK);
+    expect(token(lines[1], "var")?.color).toBe(KEYWORD_DARK);
+    expect(token(lines[1], "# note")?.color).toBe(COMMENT_DARK);
+    expect(token(lines[2], "count")?.color).toBe(KEYWORD_DARK);
+  });
+
+  it("colors Jinja tags on top of the templated language", async () => {
+    const language = await languageForPath("templates/app.yml.j2");
+    const lines = highlightSource(
+      "{% if debug %}\nname: {{ app_name }} # note\n{% endif %}",
+      language,
+      "dark",
+    );
+    expect(token(lines[0], "if")?.color).toBe(KEYWORD_DARK);
+    expect(token(lines[1], "name")?.color).toBe(PROPERTY_DARK);
+    expect(token(lines[1], "# note")?.color).toBe(COMMENT_DARK);
+  });
+
+  it("colors Jinja expressions in Ansible YAML", async () => {
+    const language = await languageForPath("roles/web/tasks/main.yml");
+    const lines = highlightSource(
+      '- name: Install\n  when: "{{ enabled | default(true) }}"',
+      language,
+      "dark",
+    );
+    expect(token(lines[0], "name")?.color).toBe(PROPERTY_DARK);
+    expect(token(lines[1], "true")?.color).toBe(KEYWORD_DARK);
   });
 
   it("leaves unknown languages unstyled", () => {

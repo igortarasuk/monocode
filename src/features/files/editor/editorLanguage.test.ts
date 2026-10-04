@@ -51,6 +51,12 @@ describe("languageForPath", () => {
     "messages.proto",
     "Dockerfile",
     "settings.jsonc",
+    "main.tf",
+    "prod.tfvars",
+    "config.hcl",
+    "nginx.conf.j2",
+    "index.html.jinja",
+    "roles/web/tasks/main.yml",
   ])("loads highlighting for additional mainstream file %s", async (path) => {
     await expect(languageForPath(path)).resolves.not.toBeNull();
   });

@@ -92,6 +92,7 @@ import {
   setGitOriginal,
 } from "../editor/editorGit";
 import { editorLint } from "../editor/editorLint";
+import { externalLint, notifyExternalLintSaved } from "../editor/externalLint";
 import { editorSearch } from "../editor/editorSearch";
 import { editorScrollbar } from "../editor/editorScrollbar";
 import { FilePreviewSearch } from "./FilePreviewSearch";
@@ -484,6 +485,7 @@ export function FileEditor({
               <CodeMirrorEditor
                 key={`${path}:${reloadKey}`}
                 path={path}
+                cwd={cwd}
                 commentPath={relativePath}
                 value={loadState.content}
                 showDiff={showDiff}
@@ -508,6 +510,7 @@ export function FileEditor({
         <CodeMirrorEditor
           key={`${path}:${reloadKey}`}
           path={path}
+          cwd={cwd}
           commentPath={relativePath}
           value={loadState.content}
           showDiff={showDiff}
@@ -546,6 +549,7 @@ export function FileEditor({
 
 export function CodeMirrorEditor({
   path,
+  cwd = "",
   commentPath,
   value,
   showDiff,
@@ -561,6 +565,8 @@ export function CodeMirrorEditor({
   formatOnSave = true,
 }: {
   path: string;
+  /** Project root, for linters that need more than the one file. */
+  cwd?: string;
   commentPath: string;
   value: string;
   showDiff: boolean;
@@ -752,6 +758,7 @@ export function CodeMirrorEditor({
         if (disposed || generation !== saveGeneration) return;
         savedDocumentRef.current = document;
         markDirty();
+        notifyExternalLintSaved(view);
       })();
       return true;
     };
@@ -789,6 +796,9 @@ export function CodeMirrorEditor({
         editorTyping(path),
         editorAutocomplete,
         editorLint(path, (count) => onErrorCountChangeRef.current(count)),
+        externalLint(path, cwd, (count) =>
+          onErrorCountChangeRef.current(count),
+        ),
         editorScrollbar,
         editorSearch,
         Prec.high(
@@ -885,7 +895,7 @@ export function CodeMirrorEditor({
       setSelectionTarget(null);
       view.destroy();
     };
-  }, [formatOnSave, lockOverscroll, path, showDiff, syncChunkNav]);
+  }, [cwd, formatOnSave, lockOverscroll, path, showDiff, syncChunkNav]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -935,6 +945,7 @@ export function CodeMirrorEditor({
     });
     savedDocumentRef.current = view.state.doc;
     setDirty(false);
+    notifyExternalLintSaved(view);
     if (showDiff) {
       chunkNavPinnedRef.current = null;
       syncChunkNav(view);
