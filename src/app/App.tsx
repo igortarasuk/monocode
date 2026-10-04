@@ -1,4 +1,5 @@
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
+import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation";
 import { useIdleSessionDetach } from "./hooks/useIdleSessionDetach";
 import {
   cancelScheduledFlush,
@@ -82,7 +83,7 @@ import {
   type SessionDeleteChoice,
 } from "../features/sessions/ui/DeleteSessionDialog";
 import {
-  setWorktreeFocus,
+  type WorktreeFocus,
   useWorktreeFocus,
   worktreeFocus,
 } from "../features/source-control/model/worktreeFocus";
@@ -1001,7 +1002,7 @@ function Workspace({
   const lastDockSideRef = useRef(lastDockSide);
   lastDockSideRef.current = lastDockSide;
   const [projectTerminalFocused, setProjectTerminalFocused] = useState(false);
-  const [activeTabId, setActiveTabId] = useState(
+  const [activeTabId, setActiveTabIdState] = useState(
     () => windowTransfer?.activeTabId ?? resumed?.activeTabId ?? seed.tab.id,
   );
   const [composerFocused, setComposerFocused] = useState(() => {
@@ -1229,6 +1230,36 @@ function Workspace({
     [tabWorkspace],
   );
 
+  const workspaceNavigation = useWorkspaceNavigation({
+    project: projectCwd,
+    activeTabId,
+    tabs,
+    sessions,
+    pins: workspacePins.current,
+    tabWorkspace,
+    moveSession: (id, tree, isCurrent) =>
+      onWorktreeChange(id, tree, false, isCurrent),
+    activateTab: (id) => {
+      if (tabsRef.current.some((tab) => tab.id === id)) {
+        activateTab(id, undefined, "workspace");
+      } else {
+        // A newly created tab has not rendered into tabsRef yet.
+        setActiveTabIdState(id);
+        setComposerFocused(true);
+      }
+    },
+    createTab: (project, focus) => createWorkspaceTab(project, focus),
+  });
+  // Every ordinary tab activation supersedes an unfinished workspace request,
+  // including opening a session in the same tab or selecting a project.
+  const setActiveTabId = useCallback(
+    (id: string) => {
+      workspaceNavigation.cancel();
+      setActiveTabIdState(id);
+    },
+    [workspaceNavigation.cancel],
+  );
+
   const projectCwdRef = useRef(projectCwd);
   projectCwdRef.current = projectCwd;
   const searchViewOpenRef = useRef(searchViewOpen);
@@ -1289,6 +1320,7 @@ function Workspace({
     () =>
       preloadNavigationWhenIdle([
         InboxView.preload,
+        LinkedWorkItemPanel.preload,
         AutomationsView.preload,
         listAutomations,
         ...(notesEnabled ? [NotesView.preload, loadNotes] : []),
@@ -1296,9 +1328,6 @@ function Workspace({
     [notesEnabled],
   );
 
-  /** Set while the project rail switches projects, whose landing tab is
-   * incidental and gives way to the worktree picked in that project. */
-  const projectRailSwitch = useRef(false);
   const projectReturnRef = useRef<ProjectReturnMemory>(
     resumed?.projectReturnMemory ?? new Map(),
   );
@@ -2130,6 +2159,7 @@ function Workspace({
     windowTransfer,
     keepWorkspaceTab,
     projectWorktree?.path,
+    workspaceNavigation.revision,
   ]);
 
   useEffect(() => {
@@ -2176,46 +2206,54 @@ function Workspace({
     setSessions,
   });
 
-  const activateTab = useCallback((id: string, paneId?: string) => {
-    const tab = tabsRef.current.find((entry) => entry.id === id);
-    const nextFocusedId =
-      tab &&
-      paneId &&
-      (leafIds(tab.layout).includes(paneId) ||
-        tab.editorPanes.some((entry) => entry.id === paneId) ||
-        (tab.terminalPanes ?? []).some((entry) => entry.id === paneId))
-        ? paneId
-        : tab?.focusedId;
+  const activateTab = useCallback(
+    (
+      id: string,
+      paneId?: string,
+      reason: "session" | "workspace" = "session",
+    ) => {
+      const tab = tabsRef.current.find((entry) => entry.id === id);
+      const nextFocusedId =
+        tab &&
+        paneId &&
+        (leafIds(tab.layout).includes(paneId) ||
+          tab.editorPanes.some((entry) => entry.id === paneId) ||
+          (tab.terminalPanes ?? []).some((entry) => entry.id === paneId))
+          ? paneId
+          : tab?.focusedId;
 
-    setActiveTabId(id);
-    if (tab && nextFocusedId && nextFocusedId !== tab.focusedId) {
-      setTabs((prev) =>
-        prev.map((entry) =>
-          entry.id === id
-            ? { ...entry, focusedId: nextFocusedId, diffFocused: false }
-            : entry,
-        ),
-      );
-    }
+      if (reason === "workspace") setActiveTabIdState(id);
+      else setActiveTabId(id);
+      if (tab && nextFocusedId && nextFocusedId !== tab.focusedId) {
+        setTabs((prev) =>
+          prev.map((entry) =>
+            entry.id === id
+              ? { ...entry, focusedId: nextFocusedId, diffFocused: false }
+              : entry,
+          ),
+        );
+      }
 
-    if (tab) {
-      const focusedTab = nextFocusedId
-        ? { ...tab, focusedId: nextFocusedId }
-        : tab;
-      const cwd = focusedWorkspaceTabCwd(focusedTab, sessionsRef.current);
-      if (cwd && looksLikeProject(cwd)) {
-        const normalized = normalizeProjectPath(cwd);
-        if (!sameProjectPath(normalized, projectCwdRef.current)) {
-          setProjectCwd(normalized);
-          setRecents(rememberProject(normalized));
+      if (tab) {
+        const focusedTab = nextFocusedId
+          ? { ...tab, focusedId: nextFocusedId }
+          : tab;
+        const cwd = focusedWorkspaceTabCwd(focusedTab, sessionsRef.current);
+        if (cwd && looksLikeProject(cwd)) {
+          const normalized = normalizeProjectPath(cwd);
+          if (!sameProjectPath(normalized, projectCwdRef.current)) {
+            setProjectCwd(normalized);
+            setRecents(rememberProject(normalized));
+          }
         }
       }
-    }
-    setComposerFocused(
-      !!nextFocusedId &&
-        sessionsRef.current.some((session) => session.id === nextFocusedId),
-    );
-  }, []);
+      setComposerFocused(
+        !!nextFocusedId &&
+          sessionsRef.current.some((session) => session.id === nextFocusedId),
+      );
+    },
+    [],
+  );
 
   const commitTabVisit = useCallback((history: TabVisitHistory) => {
     tabVisitRef.current = history;
@@ -2315,6 +2353,22 @@ function Workspace({
     }
     setWhatsNewVersion(document.source.version);
   }, []);
+
+  const createWorkspaceTab = useCallback(
+    (cwd: string, focus?: WorktreeFocus) => {
+      const session = {
+        ...newDefaultSession(cwd, sessionDefaults?.runtimeMode),
+        ...(focus && !sameProjectPath(focus.path, cwd)
+          ? { worktreeCwd: focus.path, branch: focus.branch ?? undefined }
+          : {}),
+      };
+      const tab = newTab(session.id);
+      setSessions((prev) => [...prev, session]);
+      appendTab(tab, cwd);
+      return tab.id;
+    },
+    [appendTab, sessionDefaults?.runtimeMode],
+  );
 
   const onNew = useCallback(() => {
     setSearchViewOpen(false);
@@ -3525,7 +3579,7 @@ function Workspace({
       stats.set(key, entry);
     }
     return stats;
-  }, [tabs, sessions, sidebarCwd, tabWorkspace]);
+  }, [tabs, sessions, sidebarCwd, tabWorkspace, workspaceNavigation.revision]);
   const deckProjectTabs = useMemo(() => {
     // A projectless session belongs to no project, so it stands on its own
     // rather than trailing the last project's tabs.
@@ -3545,6 +3599,7 @@ function Workspace({
     projectCwd,
     projectWorktree?.path,
     tabWorkspace,
+    workspaceNavigation.revision,
   ]);
 
   const onNext = useCallback(() => {
@@ -3605,6 +3660,11 @@ function Workspace({
 
   const onFocusPane = useCallback(
     (paneId: string) => {
+      if (
+        tabsRef.current.find((tab) => tab.id === activeTabIdRef.current)
+          ?.focusedId !== paneId
+      )
+        workspaceNavigation.cancel();
       setProjectTerminalFocused(false);
       if (inboxAskPortal?.sessionId === paneId) {
         setComposerFocused(true);
@@ -4191,6 +4251,7 @@ function Workspace({
 
   const onSelectHistorySession = useCallback(
     async (sessionId: string) => {
+      workspaceNavigation.cancel();
       let session = await ensureOpenSession(sessionId);
       if (!session || session.inboxAsk) return;
       const parentId =
@@ -4201,6 +4262,8 @@ function Workspace({
         session = await ensureOpenSession(parentId);
         if (!session) return;
       }
+      if (looksLikeProject(session.cwd))
+        setProjectCwd(normalizeProjectPath(session.cwd));
       const linkedUpdate = linkedSessionUpdatesRef.current.get(session.id);
       if (focusOpenSession(session.id)) {
         if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
@@ -5200,7 +5263,13 @@ function Workspace({
   );
 
   const onWorktreeChange = useCallback(
-    async (sessionId: string, tree: Worktree, fromComposer = false) => {
+    async (
+      sessionId: string,
+      tree: Worktree,
+      fromComposer = false,
+      isCurrent: () => boolean = () => true,
+    ) => {
+      if (!isCurrent()) return;
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       if (
         !current ||
@@ -5241,6 +5310,7 @@ function Workspace({
       pendingPersist.current.delete(sessionId);
       try {
         const listed = await listWorktrees(current.cwd);
+        if (!isCurrent()) return;
         const target = listed.worktrees.find(
           (entry) =>
             pathKey(entry.path) === pathKey(tree.path) && !entry.missing,
@@ -5279,8 +5349,10 @@ function Workspace({
           return;
         }
         await flushSessionCheckpoint(sessionId);
+        if (!isCurrent()) return;
         for (const harness of sessionChildHarnesses(source)) {
           await forgetHarnessSession(harness, sessionId);
+          if (!isCurrent()) return;
         }
         const latest = sessionsRef.current.find((s) => s.id === sessionId);
         if (
@@ -5304,6 +5376,7 @@ function Workspace({
           await keepSessionChanges(sessionId, target.path);
         pendingPersist.current.delete(sessionId);
         if (shouldPersistSession(next)) await upsertSession(next);
+        if (!isCurrent()) return;
         invalidateLoadedSession(sessionId);
         sessionsRef.current = sessionsRef.current.map((s) =>
           s.id === sessionId ? next : s,
@@ -5325,114 +5398,13 @@ function Workspace({
     [onWorktreeChange],
   );
 
-  // The picked worktree is the workspace: its tabs are the ones shown. Picking
-  // another one returns to the tab last used there, carries a blank session
-  // over, or opens a new one.
-  const worktreeTabMemory = useRef(new Map<string, string>());
-  const scopedProject =
-    projectCwd !== "~" && !isRemoteProjectPath(projectCwd) ? projectCwd : null;
-  const scopeWorktree = projectWorktree?.path ?? projectCwd;
-  const scopeKey = `${pathKey(projectCwd)}\0${pathKey(scopeWorktree)}`;
-  const activeTabWorktree =
-    activeTab && scopedProject ? tabWorkspace(activeTab, sessions) : null;
-  const activeScopeKey = `${activeTabId}\0${activeTabWorktree ?? ""}`;
-  const lastScope = useRef({ scopeKey, activeScopeKey });
-  useEffect(() => {
-    const previous = lastScope.current;
-    lastScope.current = { scopeKey, activeScopeKey };
-    if (!scopedProject || !activeTab) return;
-    const tabProject = workspaceTabCwd(activeTab, sessionsRef.current);
-    if (!tabProject || !sameProjectPath(tabProject, scopedProject)) return;
-    if (!activeTabWorktree || sameProjectPath(activeTabWorktree, scopeWorktree)) {
-      worktreeTabMemory.current.set(scopeKey, activeTab.id);
-      return;
-    }
-    const moveBlankHere = () => {
-      if (!active || active.busy || !isBlankSession(active)) return false;
-      workspacePins.current.delete(activeTab.id);
-      void onWorktreeChange(active.id, {
-        path: scopeWorktree,
-        branch: projectWorktree?.branch ?? null,
-        head: "",
-        isMain: !projectWorktree,
-        locked: false,
-        prunable: false,
-        missing: false,
-        dirty: null,
-        unpushed: null,
-        sessionIds: [],
-      }).catch(() => undefined);
-      return true;
-    };
-    const joinWorkspace = () => {
-      workspacePins.current.set(activeTab.id, scopeWorktree);
-      worktreeTabMemory.current.set(scopeKey, activeTab.id);
-    };
-    const sameProject =
-      previous.scopeKey.split("\0")[0] === pathKey(scopedProject);
-    const scopedTabs = () =>
-      filterTabsForProject(
-        tabsRef.current,
-        sessionsRef.current,
-        scopedProject,
-      ).filter((tab) => {
-        const workspace = tabWorkspace(tab, sessionsRef.current);
-        return !workspace || sameProjectPath(workspace, scopeWorktree);
-      });
-    const lastUsedTab = () => {
-      const scoped = scopedTabs();
-      const remembered = worktreeTabMemory.current.get(scopeKey);
-      return (
-        scoped.find((tab) => tab.id === remembered) ?? scoped[scoped.length - 1]
-      );
-    };
-    if (!sameProject) {
-      // Back in a project: its picked worktree wins over whichever tab the
-      // switch landed on. From the project rail that tab is incidental (a
-      // reused blank, or the project's first tab), so return to the worktree's
-      // own; a session opened directly (inbox, search) joins it instead.
-      const fromRail = projectRailSwitch.current;
-      projectRailSwitch.current = false;
-      const target = fromRail ? lastUsedTab() : undefined;
-      if (target) activateTab(target.id);
-      else if (!moveBlankHere()) joinWorkspace();
-      return;
-    }
-    const picked =
-      previous.scopeKey !== scopeKey &&
-      previous.activeScopeKey === activeScopeKey;
-    if (!picked && previous.activeScopeKey !== activeScopeKey) {
-      // Opened from the session list, inbox or search: the tab joins the
-      // workspace on screen, as it did before worktree scoping.
-      joinWorkspace();
-      return;
-    }
-    if (!picked) {
-      // Startup: nothing on screen to keep, so the workspace follows the tab.
-      setWorktreeFocus(
-        scopedProject,
-        sameProjectPath(activeTabWorktree, scopedProject)
-          ? undefined
-          : {
-              path: activeTabWorktree,
-              branch:
-                sessionsRef.current.find(
-                  (session) =>
-                    !!session.worktreeCwd &&
-                    sameProjectPath(session.worktreeCwd, activeTabWorktree),
-                )?.branch ?? null,
-            },
-      );
-      return;
-    }
-    const target = lastUsedTab();
-    if (target) {
-      activateTab(target.id);
-      return;
-    }
-    if (moveBlankHere()) return;
-    onNew();
-  }, [scopeKey, activeScopeKey]);
+  const onSelectWorkspace = useCallback(
+    (focus?: WorktreeFocus) => {
+      setProjectCwd(sidebarCwdRef.current);
+      workspaceNavigation.selectWorkspace(sidebarCwdRef.current, focus);
+    },
+    [workspaceNavigation.selectWorkspace],
+  );
 
   /**
    * Open a run of folders from one snapshot, committed in a single transition.
@@ -5514,10 +5486,15 @@ function Workspace({
 
   const onSelectProject = useCallback(
     (path: string) => {
-      projectRailSwitch.current = !sameProjectPath(path, projectCwdRef.current);
+      workspaceNavigation.cancel();
       openProjects([path]);
+      workspaceNavigation.selectProject(path);
     },
-    [openProjects],
+    [
+      openProjects,
+      workspaceNavigation.cancel,
+      workspaceNavigation.selectProject,
+    ],
   );
 
   const pickProject = useCallback(async () => {
@@ -6183,6 +6160,9 @@ function Workspace({
       if (remoteControl && attachments.length === 0)
         return setRemoteControl(sessionId, remoteControl);
       if (editedResends.isActive(sessionId)) return false;
+      // Output already received belongs before the submitted user message.
+      // Flush before reading the session too, since pending errors can settle it.
+      flushHarnessEvents();
       const controlError = orchestrator.submissionError(
         sessionId,
         options?.managed,
@@ -6211,7 +6191,8 @@ function Workspace({
       }
       if (
         removingSessionIds.current.has(sessionId) ||
-        switchingWorktrees.current.has(sessionId)
+        switchingWorktrees.current.has(sessionId) ||
+        workspaceNavigation.isSwitching(sessionId)
       )
         return false;
       const storedCurrent = sessionsRef.current.find((s) => s.id === sessionId);
@@ -7376,6 +7357,8 @@ function Workspace({
 
   const onSubmit = useCallback(
     (...args: Parameters<Submit>): boolean => {
+      // Reject before async preparation can make the composer clear its draft.
+      if (workspaceNavigation.isSwitching(args[0])) return false;
       // `! cmd` runs in a project terminal, like Claude Code's shell mode.
       const command = bangCommand(args[1]);
       if (command && !args[2]?.length) {
@@ -9368,6 +9351,7 @@ function Workspace({
         }).catch(console.error);
       },
       steer: async (id, text) => {
+        flushHarnessEvents();
         const session = sessionsRef.current.find((entry) => entry.id === id);
         if (!session) throw new Error("This agent is no longer available");
         if (!session.busy)
@@ -9425,7 +9409,7 @@ function Workspace({
         }
       },
     });
-  }, [checkOpenWorktreeFiles, submitSession, onStop]);
+  }, [checkOpenWorktreeFiles, submitSession, onStop, flushHarnessEvents]);
 
   useEffect(() => {
     orchestrator.sync();
@@ -10021,6 +10005,7 @@ function Workspace({
   }, []);
 
   const onOpenSearch = useCallback(() => {
+    workspaceNavigation.cancel();
     startTransition(() => {
       setFilePickerOpen(false);
       setSettingsOpen(false);
@@ -10038,6 +10023,7 @@ function Workspace({
   }, []);
 
   const onOpenInbox = useCallback(() => {
+    workspaceNavigation.cancel();
     startTransition(() => {
       setFilePickerOpen(false);
       setSettingsOpen(false);
@@ -10154,6 +10140,7 @@ function Workspace({
   );
 
   const onOpenNotes = useCallback(() => {
+    workspaceNavigation.cancel();
     if (!loadNotesEnabled()) return;
     startTransition(() => {
       setFilePickerOpen(false);
@@ -10171,6 +10158,7 @@ function Workspace({
   }, []);
 
   const onOpenAutomations = useCallback(() => {
+    workspaceNavigation.cancel();
     startTransition(() => {
       setFilePickerOpen(false);
       setSettingsOpen(false);
@@ -10264,6 +10252,7 @@ function Workspace({
 
   const openSettings = useCallback(
     (section?: SettingsSectionId, anchor?: SettingsAnchor) => {
+      workspaceNavigation.cancel();
       if (!settingsOpenRef.current) {
         settingsReturnViewRef.current = {
           search: searchViewOpenRef.current,
@@ -10963,6 +10952,9 @@ function Workspace({
   );
 
   const sessionPaneProps = {
+    workspaceSwitchingSessionId: workspaceNavigation.pending
+      ? active?.id
+      : undefined,
     recents,
     hideProjectPicker: true,
     onFocus: onFocusPane,
@@ -11072,6 +11064,15 @@ function Workspace({
               cwd={sidebarCwd}
               gitCwd={gitCwd}
               worktreeTabStats={worktreeTabStats}
+              onSelectWorkspace={onSelectWorkspace}
+              workspaceSwitchPending={
+                workspaceNavigation.pending?.project === sidebarCwd
+              }
+              workspaceSwitchError={
+                workspaceNavigation.error?.project === sidebarCwd
+                  ? workspaceNavigation.error.message
+                  : undefined
+              }
               explorerRootLabel={explorerRootLabel}
               open={sessionSidebarOpen}
               tab={sidebarTab}

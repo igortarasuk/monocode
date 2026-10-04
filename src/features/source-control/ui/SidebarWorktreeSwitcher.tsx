@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
-import { setWorktreeFocus, useWorktreeFocus } from "../model/worktreeFocus";
+import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
 import {
@@ -16,8 +16,14 @@ import {
 export function SidebarWorktreeSwitcher({
   cwd,
   tabStats,
+  onSelect,
+  pending = false,
+  switchError,
 }: {
   cwd: string;
+  onSelect?: (focus?: WorktreeFocus) => void;
+  pending?: boolean;
+  switchError?: string;
   /** Open tabs per worktree path key; hidden worktrees can still hold some. */
   tabStats?: ReadonlyMap<string, { tabs: number; busy: boolean }>;
 }) {
@@ -35,6 +41,8 @@ export function SidebarWorktreeSwitcher({
   useEffect(() => {
     if (
       focus &&
+      !pending &&
+      !switchError &&
       data &&
       !data.worktrees.some(
         (tree) =>
@@ -43,8 +51,12 @@ export function SidebarWorktreeSwitcher({
           pathKey(tree.path) === pathKey(focus.path),
       )
     )
-      setWorktreeFocus(cwd, undefined);
-  }, [cwd, data, focus]);
+      onSelect?.(undefined);
+  }, [cwd, data, focus, onSelect, pending, switchError]);
+
+  useEffect(() => {
+    if (switchError) setOpen(true);
+  }, [switchError]);
 
   const focused =
     focus &&
@@ -52,7 +64,7 @@ export function SidebarWorktreeSwitcher({
   const title = focus
     ? (focused?.branch ?? focus.branch ?? "Detached worktree")
     : "Workspace";
-  if (data && worktrees.length === 0 && !focus)
+  if (data && worktrees.length === 0 && !focus && !switchError && !pending)
     return (
       <span className="min-w-0 truncate text-sm font-medium leading-tight">
         {title}
@@ -100,6 +112,7 @@ export function SidebarWorktreeSwitcher({
         aria-label="Switch working copy"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-busy={pending}
         title={
           focus
             ? `${focus.branch ?? "detached"}\n${prettyCwd(focus.path)}`
@@ -112,7 +125,14 @@ export function SidebarWorktreeSwitcher({
         className="-ml-1.5 flex h-6.5 min-w-0 max-w-full items-center gap-2 rounded-md px-1.5 text-sm font-medium leading-tight hover:bg-content/8 aria-expanded:bg-content/8"
       >
         <span className="min-w-0 truncate">{title}</span>
-        <ChevronsUpDown className="size-3.5 shrink-0 text-content/45" />
+        {pending ? (
+          <Loader
+            aria-label="Switching working copy"
+            className="size-3.5 shrink-0 animate-spin text-content/45"
+          />
+        ) : (
+          <ChevronsUpDown className="size-3.5 shrink-0 text-content/45" />
+        )}
       </button>
       {open ? (
         <Popover
@@ -132,7 +152,7 @@ export function SidebarWorktreeSwitcher({
             <GitBranch className="size-3.5 shrink-0 text-content/50" />,
             main?.branch ?? "Project folder",
             "Project folder · all sessions",
-            () => setWorktreeFocus(cwd, undefined),
+            () => onSelect?.(undefined),
             main?.path ?? cwd,
           )}
           {!data && !error ? (
@@ -148,14 +168,13 @@ export function SidebarWorktreeSwitcher({
               <FolderTree className="size-3.5 shrink-0 text-content/50" />,
               tree.branch ?? `Detached ${tree.head.slice(0, 7)}`,
               prettyCwd(tree.path),
-              () =>
-                setWorktreeFocus(cwd, { path: tree.path, branch: tree.branch }),
+              () => onSelect?.({ path: tree.path, branch: tree.branch }),
               tree.path,
             ),
           )}
-          {error ? (
+          {switchError || error ? (
             <p role="alert" className="px-2 py-2 text-[11px] text-red-400">
-              {error}
+              {switchError || error}
             </p>
           ) : null}
         </Popover>

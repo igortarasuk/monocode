@@ -101,6 +101,7 @@ import type { HostSession } from "../../connections/model/protocol";
 
 export type SessionPaneProps = {
   session: Session;
+  workspaceSwitchingSessionId?: string;
   reviewUndoLocked?: boolean;
   visible: boolean;
   focused: boolean;
@@ -255,6 +256,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteSessionStarted = false,
   allowedModelHarnesses,
   session,
+  workspaceSwitchingSessionId,
   reviewUndoLocked = false,
   visible,
   focused,
@@ -550,6 +552,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composer = (
     <Composer
       key={session.id}
+      disabled={workspaceSwitchingSessionId === session.id}
       remoteSession={remoteSession}
       remoteFeatures={remoteFeatures}
       allowedModelHarnesses={allowedModelHarnesses}
