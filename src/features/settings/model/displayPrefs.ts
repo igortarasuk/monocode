@@ -13,7 +13,7 @@ export const SHOW_REMAINING_USAGE_CHANGE_EVENT =
 /** Fired on `window` whenever email masking flips (detail: boolean). */
 export const MASK_EMAILS_CHANGE_EVENT = "monocode:maskemailschange";
 
-function flagStore(key: string, fallback: boolean, event: string) {
+export function flagStore(key: string, fallback: boolean, event: string) {
   // Holds a saved value only while storage failed to keep it, so the switch
   // still flips for this window when localStorage is unavailable.
   let unsaved: boolean | null = null;

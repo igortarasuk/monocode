@@ -82,7 +82,7 @@ export function editorLint(
  * than as part of an edit, so a tab that wants to show an error badge has to
  * watch for the field changing underneath it.
  */
-function errorCountReporter(onErrorCount: (count: number) => void): Extension {
+export function errorCountReporter(onErrorCount: (count: number) => void): Extension {
   let reported = 0;
   return EditorView.updateListener.of((update) => {
     const count = diagnosticCount(update.state);
@@ -213,7 +213,7 @@ function quote(text: string): string {
   return `"${clipped}"`;
 }
 
-const lintTheme = EditorView.theme({
+export const lintTheme = EditorView.theme({
   ".cm-lintRange-error": {
     // The base theme paints a wavy line as a data-URI background image, which
     // can only be recoloured by reproducing the whole SVG. A text-decoration

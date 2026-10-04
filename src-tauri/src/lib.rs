@@ -11,6 +11,7 @@ mod control;
 pub mod control_cli;
 mod cursor_store;
 mod external_editor;
+mod external_lint;
 mod fs;
 mod gitlab;
 mod harness;
@@ -514,6 +515,9 @@ pub fn run() {
             laya::laya_presets,
             laya::laya_domain,
             laya::laya_stats,
+            external_lint::external_lint,
+            external_lint::external_lint_tools,
+            external_lint::vuln_check,
             ollama::ollama_list,
             ollama::ollama_pull,
             ollama::ollama_delete,

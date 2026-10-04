@@ -247,6 +247,13 @@ import {
   useShowRemainingUsage,
 } from "../model/displayPrefs";
 import {
+  LINT_TOOL_SETTINGS,
+  saveLintToolEnabled,
+  useLintToolEnabled,
+  type LintToolSetting,
+} from "../model/lintTools";
+import { externalLintTools } from "../../../platform/tauri/lint";
+import {
   accountStatus,
   accountUsageKey,
   useProviderAccountUsage,
@@ -1096,6 +1103,7 @@ function ChatPage() {
             onChange={onFormatOnSave}
           />
         </Row>
+        <LintToolRows />
       </Group>
 
       <Group
@@ -3318,6 +3326,65 @@ function ProvidersPage({
         </Row>
       </Group>
     </>
+  );
+}
+
+/** One switch per external linter, flagged when the tool is not on PATH. */
+function LintToolRows() {
+  const [missing, setMissing] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    void externalLintTools()
+      .then((tools) => {
+        if (cancelled || !Array.isArray(tools)) return;
+        setMissing(
+          new Set(
+            tools.filter((tool) => !tool.available).map((tool) => tool.tool),
+          ),
+        );
+      })
+      // Without the probe the switches still work; only the hint is lost.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return (
+    <>
+      {LINT_TOOL_SETTINGS.map((setting) => (
+        <LintToolRow
+          key={setting.tool}
+          setting={setting}
+          missing={missing.has(setting.tool)}
+        />
+      ))}
+    </>
+  );
+}
+
+function LintToolRow({
+  setting,
+  missing,
+}: {
+  setting: LintToolSetting;
+  missing: boolean;
+}) {
+  const on = useLintToolEnabled(setting.tool);
+  return (
+    <Row
+      id={setting.id}
+      label={setting.label}
+      description={setting.description}
+    >
+      {missing ? (
+        <span className="text-[11px] text-content/40">Not installed</span>
+      ) : null}
+      <Toggle
+        label={setting.label}
+        on={on}
+        onChange={(next) => saveLintToolEnabled(setting.tool, next)}
+      />
+    </Row>
   );
 }
 

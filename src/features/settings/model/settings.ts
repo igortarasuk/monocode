@@ -14,6 +14,7 @@ import {
   shortcutTokens,
 } from "../../quick-composer/model/quickComposerShortcut";
 import { readFlag, writeFlag } from "./storageFlags";
+import { LINT_TOOL_SETTINGS } from "./lintTools";
 
 const SECTION_KEY = "monocode.settingsSection";
 
@@ -353,6 +354,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     label: "Format on save",
     keywords: "prettier quotes editor save format",
   },
+  ...LINT_TOOL_SETTINGS.map(({ id, label, keywords }) => ({
+    id,
+    section: "chat" as const,
+    label,
+    keywords,
+  })),
   {
     id: "diff-view",
     section: "chat",
