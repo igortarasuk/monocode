@@ -1,5 +1,6 @@
 import {
   HighlightStyle,
+  Language,
   LanguageSupport,
   StreamLanguage,
   type StreamParser,
@@ -143,9 +144,38 @@ function legacyLanguage(parser: StreamParser<unknown>): Extension {
   return StreamLanguage.define(parser);
 }
 
+const JINJA_EXTENSIONS = [".j2", ".jinja", ".jinja2"];
+
+/** Directories Ansible gives a meaning to; YAML under them carries Jinja. */
+const ANSIBLE_PATH =
+  /(?:^|[\\/])(?:ansible|playbooks|roles|tasks|handlers|group_vars|host_vars)[\\/]/i;
+const ANSIBLE_NAME = /^(?:playbook|site|main|requirements)[\w.-]*\.ya?ml$/;
+
+export function isAnsibleYaml(path: string, name: string) {
+  return ANSIBLE_PATH.test(path) || ANSIBLE_NAME.test(name);
+}
+
+/** Jinja tags and expressions layered over the language they are written in. */
+async function jinjaOver(base: Extension | null): Promise<Extension> {
+  const { jinja } = await import("@codemirror/lang-jinja");
+  if (base instanceof LanguageSupport) return jinja({ base });
+  if (base instanceof Language) return jinja({ base: new LanguageSupport(base) });
+  return jinja();
+}
+
 export async function languageForPath(path: string): Promise<Extension | null> {
   const name = basename(path).toLowerCase();
   const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+
+  if (JINJA_EXTENSIONS.includes(extension)) {
+    // `nginx.conf.j2` is an nginx config first; highlight it as one.
+    const inner = path.slice(0, path.length - extension.length);
+    return jinjaOver(await languageForPath(inner));
+  }
+  if ([".tf", ".tfvars", ".hcl"].includes(extension)) {
+    const { hcl } = await import("./hclMode");
+    return legacyLanguage(hcl);
+  }
 
   if ([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"].includes(extension)) {
     const { javascript } = await import("@codemirror/lang-javascript");
@@ -218,7 +248,7 @@ export async function languageForPath(path: string): Promise<Extension | null> {
   }
   if ([".yaml", ".yml"].includes(extension)) {
     const { yaml } = await import("@codemirror/lang-yaml");
-    return yaml();
+    return isAnsibleYaml(path, name) ? jinjaOver(yaml()) : yaml();
   }
   if (extension === ".cs") {
     const { csharp } = await import("@codemirror/legacy-modes/mode/clike");
