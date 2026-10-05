@@ -13,6 +13,7 @@ use std::process::{Command, Stdio};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, State};
 
@@ -23,6 +24,8 @@ const USER_DOC: &str = "user.md";
 const MODEL_DOC: &str = "model.md";
 const INFRA_DOC: &str = "infra.md";
 const CHANGES_DOC: &str = "changes.md";
+/// Generated from `infra.md`; an Archify architecture candidate.
+const ARCH_DOC: &str = "architecture.json";
 const DOCS: [&str; 4] = [USER_DOC, MODEL_DOC, INFRA_DOC, CHANGES_DOC];
 const MAX_DOC_BYTES: u64 = 1 << 20;
 const MAX_ENTRY: usize = 600;
@@ -45,6 +48,7 @@ stored in Monochrome's database.
 | `infra.md` | agents | Infrastructure map: hosts, proxies, services, what each does, how to reach it, how to check its live state. |
 | `changes.md` | agents | Log of changes to infrastructure, versions, CI and deployment, newest last. |
 | `routing.md` | the owner, optional | Rules for the Auto model router; replaces the built-in ones. |
+| `architecture.json` | Monochrome | Diagram of `infra.md`, regenerated on every sync. Node positions are kept; the file is an Archify candidate. |
 
 ## For agents
 
@@ -387,6 +391,296 @@ fn index(conn: &mut Connection, key: &str, now: i64) -> Result<(Vec<InfraNode>, 
     Ok((infra, changes.len()))
 }
 
+const NODE_W: f64 = 160.0;
+const NODE_H: f64 = 64.0;
+const PITCH_X: f64 = 220.0;
+const ROW_SERVICES: f64 = 40.0;
+const ROW_HOSTS: f64 = 240.0;
+const ROW_OTHERS: f64 = 440.0;
+
+/// An Archify component id: letters, digits, `_` and `-`, starting with a letter.
+fn slug(name: &str) -> String {
+    let mut id = String::new();
+    let mut dash = false;
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            id.push(c.to_ascii_lowercase());
+            dash = false;
+        } else if !dash && !id.is_empty() {
+            id.push('-');
+            dash = true;
+        }
+    }
+    let id = id.trim_end_matches('-').to_owned();
+    if id.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+        id
+    } else {
+        format!("n-{id}")
+    }
+}
+
+fn is_host_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "host"
+            | "vm"
+            | "server"
+            | "node"
+            | "machine"
+            | "bare-metal"
+            | "cluster"
+            | "k8s"
+            | "kubernetes"
+    )
+}
+
+/// The Archify component type a `kind` maps to.
+fn component_type(kind: &str) -> &'static str {
+    let kind = kind.to_ascii_lowercase();
+    let has = |words: &[&str]| words.iter().any(|word| kind.contains(word));
+    if is_host_kind(&kind) {
+        "cloud"
+    } else if has(&[
+        "db", "database", "postgres", "mysql", "redis", "cache", "storage", "s3",
+    ]) {
+        "database"
+    } else if has(&[
+        "queue", "broker", "kafka", "rabbit", "nats", "bus", "stream",
+    ]) {
+        "messagebus"
+    } else if has(&[
+        "proxy", "lb", "balancer", "ingress", "gateway", "firewall", "vpn", "bastion", "waf",
+    ]) {
+        "security"
+    } else if has(&["external", "saas", "vendor", "third", "provider"]) {
+        "external"
+    } else if has(&["ui", "web", "frontend", "dashboard", "portal"]) {
+        "frontend"
+    } else {
+        "backend"
+    }
+}
+
+fn node_width(label: &str) -> f64 {
+    (7.0 * label.chars().count() as f64 + 24.0).clamp(NODE_W, 260.0)
+}
+
+/// Fit the role under the name at Archify's 9px sublabel budget.
+fn sublabel(role: &str, width: f64) -> String {
+    let budget = ((width - 8.0) / 5.4).floor() as usize;
+    let chars = role.chars().count();
+    if chars <= budget {
+        role.to_owned()
+    } else {
+        let mut cut: String = role.chars().take(budget.saturating_sub(1)).collect();
+        cut.push('…');
+        cut
+    }
+}
+
+fn overlaps(a: (f64, f64, f64), b: (f64, f64, f64)) -> bool {
+    (a.1 - b.1).abs() < 1.0 && a.0 < b.0 + b.2 + 40.0 && b.0 < a.0 + a.2 + 40.0
+}
+
+/// Build the diagram from the infrastructure map. Positions found in
+/// `previous` win, so hand or earlier placement survives a regeneration.
+fn architecture(title: &str, nodes: &[InfraNode], previous: Option<&Value>) -> Value {
+    let kept: std::collections::HashMap<String, (f64, f64)> = previous
+        .and_then(|value| value.get("components")?.as_array())
+        .map(|components| {
+            components
+                .iter()
+                .filter_map(|component| {
+                    let id = component.get("id")?.as_str()?.to_owned();
+                    let pos = component.get("pos")?.as_array()?;
+                    Some((id, (pos.first()?.as_f64()?, pos.get(1)?.as_f64()?)))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    struct Item {
+        id: String,
+        label: String,
+        kind: String,
+        role: String,
+        runs_on: Option<usize>,
+        implicit: bool,
+    }
+    let mut items: Vec<Item> = Vec::new();
+    let mut ids = std::collections::HashSet::new();
+    let mut unique = |name: &str| {
+        let base = slug(name);
+        let mut id = base.clone();
+        let mut n = 2;
+        while !ids.insert(id.clone()) {
+            id = format!("{base}-{n}");
+            n += 1;
+        }
+        id
+    };
+    for node in nodes {
+        items.push(Item {
+            id: unique(&node.name),
+            label: node.name.clone(),
+            kind: node.kind.clone(),
+            role: node.role.clone(),
+            runs_on: None,
+            implicit: false,
+        });
+    }
+    let index_of = |items: &[Item], name: &str| {
+        items
+            .iter()
+            .position(|item| item.label.eq_ignore_ascii_case(name))
+    };
+    for i in 0..nodes.len() {
+        let target = nodes[i].runs_on.trim();
+        if target.is_empty() || target.eq_ignore_ascii_case(&nodes[i].name) {
+            continue;
+        }
+        let host = match index_of(&items, target) {
+            Some(host) => host,
+            None => {
+                items.push(Item {
+                    id: unique(target),
+                    label: target.to_owned(),
+                    kind: "host".to_owned(),
+                    role: "named in runs on".to_owned(),
+                    runs_on: None,
+                    implicit: true,
+                });
+                items.len() - 1
+            }
+        };
+        items[i].runs_on = Some(host);
+    }
+
+    let hosts: Vec<usize> = (0..items.len())
+        .filter(|&i| {
+            is_host_kind(&items[i].kind.to_ascii_lowercase())
+                || items.iter().any(|item| item.runs_on == Some(i))
+        })
+        .collect();
+    let mut pos: Vec<Option<(f64, f64)>> = vec![None; items.len()];
+    let mut x = 40.0;
+    for &host in &hosts {
+        let services: Vec<usize> = (0..items.len())
+            .filter(|&i| items[i].runs_on == Some(host))
+            .collect();
+        let span = services.len().max(1) as f64 * PITCH_X;
+        let width = node_width(&items[host].label);
+        pos[host] = Some((
+            x + (span - PITCH_X) / 2.0 + (NODE_W - width).max(0.0) / 2.0,
+            ROW_HOSTS,
+        ));
+        for (n, &service) in services.iter().enumerate() {
+            pos[service] = Some((x + n as f64 * PITCH_X, ROW_SERVICES));
+        }
+        x += span;
+    }
+    let mut x = 40.0;
+    for slot in pos.iter_mut().filter(|slot| slot.is_none()) {
+        *slot = Some((x, ROW_OTHERS));
+        x += PITCH_X;
+    }
+    // Kept nodes stay; a new node slides right until it is clear of them.
+    let mut placed: Vec<(f64, f64, f64)> = Vec::new();
+    let mut final_pos = vec![(0.0, 0.0); items.len()];
+    for (i, item) in items.iter().enumerate() {
+        if let Some(&kept) = kept.get(&item.id) {
+            final_pos[i] = kept;
+            placed.push((kept.0, kept.1, node_width(&item.label)));
+        }
+    }
+    for (i, item) in items.iter().enumerate() {
+        if kept.contains_key(&item.id) {
+            continue;
+        }
+        let width = node_width(&item.label);
+        let mut at = pos[i].unwrap_or((40.0, ROW_OTHERS));
+        while placed
+            .iter()
+            .any(|other| overlaps((at.0, at.1, width), *other))
+        {
+            at.0 += PITCH_X;
+        }
+        final_pos[i] = at;
+        placed.push((at.0, at.1, width));
+    }
+
+    let components: Vec<Value> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let width = node_width(&item.label);
+            let mut component = json!({
+                "id": item.id,
+                "type": if item.implicit { "cloud" } else { component_type(&item.kind) },
+                "label": item.label,
+                "pos": [final_pos[i].0, final_pos[i].1],
+                "size": [width, NODE_H],
+            });
+            let role = sublabel(&item.role, width);
+            if !role.is_empty() {
+                component["sublabel"] = Value::String(role);
+            }
+            if !item.kind.is_empty() && !item.implicit {
+                component["tag"] = Value::String(item.kind.clone());
+            }
+            component
+        })
+        .collect();
+    let connections: Vec<Value> = items
+        .iter()
+        .filter_map(|item| {
+            let host = &items[item.runs_on?];
+            Some(json!({
+                "id": format!("{}-on-{}", item.id, host.id),
+                "from": item.id,
+                "to": host.id,
+                "label": "runs on",
+            }))
+        })
+        .collect();
+    json!({
+        "schema_version": 1,
+        "diagram_type": "architecture",
+        "meta": {
+            "title": format!("{title}: infrastructure"),
+            "output": "architecture.html",
+            "quality_profile": "showcase",
+        },
+        "components": components,
+        "connections": connections,
+    })
+}
+
+/// Regenerate `architecture.json` from the indexed map, keeping positions.
+fn write_architecture(
+    conn: &Connection,
+    key: &str,
+    dir: &Path,
+    nodes: &[InfraNode],
+    now: i64,
+) -> Result<Value, String> {
+    let path = dir.join(ARCH_DOC);
+    let previous = read_doc(&path)
+        .or(stored_doc(conn, key, ARCH_DOC)?)
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let title = Path::new(key)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Project".to_owned());
+    let next = architecture(&title, nodes, previous.as_ref());
+    if previous.as_ref() != Some(&next) {
+        let text = serde_json::to_string_pretty(&next).map_err(|error| error.to_string())?;
+        fs::write(&path, format!("{text}\n")).map_err(|error| error.to_string())?;
+        store_doc(conn, key, ARCH_DOC, &text, now)?;
+    }
+    Ok(next)
+}
+
 /// Keep the mount out of commits without touching the tracked `.gitignore`.
 fn exclude_from_git(root: &Path) {
     let output = Command::new("git")
@@ -494,6 +788,9 @@ fn sync(
     }
     sync_docs(conn, &key, &dir, now)?;
     let (infra, changes) = index(conn, &key, now)?;
+    if problem.is_none() {
+        write_architecture(conn, &key, &dir, &infra, now)?;
+    }
     Ok(KnowledgeStatus {
         mounted: problem.is_none(),
         problem,
@@ -628,6 +925,8 @@ pub struct KnowledgePage {
     changes: String,
     change_log: Vec<LoggedChange>,
     shared: Vec<SharedNode>,
+    /// `architecture.json`, or null before the first sync.
+    architecture: Value,
 }
 
 fn change_log(conn: &Connection, key: &str) -> Result<Vec<LoggedChange>, String> {
@@ -701,6 +1000,9 @@ fn page(
         changes: doc(CHANGES_DOC)?,
         change_log: change_log(conn, &key)?,
         shared: shared_nodes(conn, &key)?,
+        architecture: stored_doc(conn, &key, ARCH_DOC)?
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or(Value::Null),
         status,
     })
 }
@@ -795,6 +1097,123 @@ mod tests {
             }
         );
         assert_eq!(nodes[1].kind, "host");
+    }
+
+    fn infra(name: &str, kind: &str, role: &str, runs_on: &str) -> InfraNode {
+        InfraNode {
+            name: name.into(),
+            kind: kind.into(),
+            role: role.into(),
+            runs_on: runs_on.into(),
+            ..InfraNode::default()
+        }
+    }
+
+    #[test]
+    fn draws_services_above_their_hosts() {
+        let nodes = [
+            infra(
+                "zabbix-proxy-eu",
+                "proxy",
+                "collects EU metrics",
+                "eu-mon-1",
+            ),
+            infra("pg-main", "database", "primary database", "eu-mon-1"),
+            infra("eu-mon-1", "host", "monitoring box", ""),
+            infra("Grafana Cloud", "external saas", "dashboards", ""),
+            infra("agent", "service", "runs on an unmapped box", "us-ops-2"),
+        ];
+        let diagram = architecture("acme", &nodes, None);
+        let components = diagram["components"].as_array().unwrap();
+        let by_id = |id: &str| {
+            components
+                .iter()
+                .find(|c| c["id"] == id)
+                .unwrap_or_else(|| panic!("missing {id}"))
+        };
+        assert_eq!(by_id("zabbix-proxy-eu")["type"], "security");
+        assert_eq!(by_id("pg-main")["type"], "database");
+        assert_eq!(by_id("eu-mon-1")["type"], "cloud");
+        assert_eq!(by_id("grafana-cloud")["type"], "external");
+        assert_eq!(by_id("us-ops-2")["sublabel"], "named in runs on");
+        assert_eq!(by_id("zabbix-proxy-eu")["pos"][1], ROW_SERVICES);
+        assert_eq!(by_id("pg-main")["pos"][1], ROW_SERVICES);
+        assert_eq!(by_id("eu-mon-1")["pos"][1], ROW_HOSTS);
+        assert_eq!(by_id("grafana-cloud")["pos"][1], ROW_OTHERS);
+        assert_ne!(
+            by_id("zabbix-proxy-eu")["pos"][0],
+            by_id("pg-main")["pos"][0]
+        );
+        let connections = diagram["connections"].as_array().unwrap();
+        assert_eq!(connections.len(), 3);
+        assert!(connections
+            .iter()
+            .any(|c| c["from"] == "agent" && c["to"] == "us-ops-2"));
+        for component in components {
+            let id = component["id"].as_str().unwrap();
+            assert!(id.chars().next().unwrap().is_ascii_alphabetic(), "{id}");
+            assert!(id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        }
+        assert_eq!(diagram["meta"]["title"], "acme: infrastructure");
+    }
+
+    #[test]
+    fn keeps_positions_and_places_new_nodes_clear_of_them() {
+        let first = architecture("acme", &[infra("db-1", "host", "", "")], None);
+        let mut moved = first.clone();
+        moved["components"][0]["pos"] = json!([900.0, 240.0]);
+        let second = architecture(
+            "acme",
+            &[infra("db-1", "host", "", ""), infra("db-2", "host", "", "")],
+            Some(&moved),
+        );
+        let components = second["components"].as_array().unwrap();
+        assert_eq!(components[0]["pos"], json!([900.0, 240.0]));
+        assert_eq!(components[1]["pos"][1], ROW_HOSTS);
+        assert_ne!(components[1]["pos"][0], json!(900.0));
+        // Regenerating from the same map changes nothing.
+        assert_eq!(
+            architecture(
+                "acme",
+                &[infra("db-1", "host", "", ""), infra("db-2", "host", "", "")],
+                Some(&second)
+            ),
+            second
+        );
+    }
+
+    #[test]
+    fn slugs_and_sublabels_fit_archify() {
+        assert_eq!(slug("Grafana Cloud (EU)"), "grafana-cloud-eu");
+        assert_eq!(slug("1password"), "n-1password");
+        assert_eq!(slug("__x"), "n-__x");
+        assert_eq!(sublabel("short", NODE_W), "short");
+        let long = sublabel(&"x".repeat(60), NODE_W);
+        assert_eq!(long.chars().count(), 28);
+        assert!(long.ends_with('…'));
+    }
+
+    #[test]
+    fn sync_writes_the_diagram_next_to_the_map() {
+        let (base, project, cwd) = scratch();
+        let mut conn = conn();
+        sync(&mut conn, &base, &cwd, true, 1).unwrap();
+        let mount_dir = project.join(MOUNT);
+        fs::write(
+            mount_dir.join(INFRA_DOC),
+            "## api\n- kind: service\n- runs on: box-1\n\n## box-1\n- kind: host\n",
+        )
+        .unwrap();
+        sync(&mut conn, &base, &cwd, false, 2).unwrap();
+        let text = fs::read_to_string(mount_dir.join(ARCH_DOC)).unwrap();
+        let diagram: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(diagram["components"].as_array().unwrap().len(), 2);
+        assert_eq!(diagram["connections"][0]["label"], "runs on");
+        let page = page(&mut conn, &base, &cwd, false, 3).unwrap();
+        assert_eq!(page.architecture["diagram_type"], "architecture");
+        let _ = fs::remove_dir_all(project.parent().unwrap());
     }
 
     #[test]

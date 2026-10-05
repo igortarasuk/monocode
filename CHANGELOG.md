@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project knowledge → **Diagram** draws the infrastructure map: services sit above the host their `runs on` names, kinds pick the colour, and node positions survive regeneration. The drawing is kept as `.monochrome/architecture.json`, an Archify architecture candidate, and is regenerated on every sync.
 - Settings → Appearance → **Diff colors** offers Default, Colorblind (blue/orange) and High contrast (blue/orange with stronger tints and text) palettes. They apply to the diff view, the editor's git gutter, tool-call previews, change counts and added/deleted file status in the file tree and changes panel.
 
 ### Changed
