@@ -14,11 +14,13 @@ const page: KnowledgePage = {
   changes: "log",
   changeLog: [],
   shared: [{ name: "eu-mon-1", projects: ["/work/billing", "C:\\work\\ops"] }],
+  architecture: null,
 };
 
 describe("project knowledge page", () => {
   it("maps tabs to their documents", () => {
     expect(tabDoc("overview")).toBeNull();
+    expect(tabDoc("diagram")).toBeNull();
     expect(tabDoc("user")).toBe("user.md");
     expect(docText(page, "user.md")).toBe("owner");
     expect(docText(page, "model.md")).toBe("agents");

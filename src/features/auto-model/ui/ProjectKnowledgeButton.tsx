@@ -6,6 +6,8 @@ import { prettyCwd } from "../../../shared/lib/paths";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { FolderTree, LoaderCircle, X } from "../../../shared/ui/icons";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import { InfraDiagram } from "./InfraDiagram";
+import { isArchitectureDiagram } from "../model/infraDiagram";
 import type { ProjectMeta } from "../model/autoModel";
 import { loadProjectMeta } from "../model/autoModelStore";
 import {
@@ -26,6 +28,8 @@ const TAB_HINT: Record<KnowledgeTab, string> = {
     "What agents learned about this project. You can correct it; agents keep it up to date.",
   infra:
     "Hosts, proxies and services. One “## name” section each, with kind, role, runs on, access, check and notes.",
+  diagram:
+    "Drawn from the infrastructure map on every sync. Positions live in .monochrome/architecture.json, an Archify candidate you can finalize or move nodes in.",
   changes:
     "Infrastructure, version and CI changes. One “- YYYY-MM-DD what changed” line each.",
 };
@@ -216,7 +220,7 @@ function ProjectKnowledgePage({
               {error ? (
                 <p className="shrink-0 px-5 pt-2 text-red-400">{error}</p>
               ) : null}
-              {doc ? (
+              {TAB_HINT[tab] ? (
                 <p className="shrink-0 px-5 pt-2 text-[12px] text-content/45">
                   {TAB_HINT[tab]}
                 </p>
@@ -234,6 +238,8 @@ function ProjectKnowledgePage({
                   />
                 ) : tab === "infra" ? (
                   <Infra page={page} />
+                ) : tab === "diagram" ? (
+                  <Diagram page={page} />
                 ) : tab === "changes" ? (
                   <Changes page={page} />
                 ) : text.trim() ? (
@@ -381,6 +387,18 @@ function Infra({ page }: { page: KnowledgePage }) {
       })}
     </div>
   );
+}
+
+function Diagram({ page }: { page: KnowledgePage }) {
+  const diagram = page.architecture;
+  if (!isArchitectureDiagram(diagram) || diagram.components.length === 0)
+    return (
+      <p className="text-content/45">
+        Nothing to draw yet. The diagram follows the infrastructure map: add a
+        “## name” section with kind and runs on, and it appears here.
+      </p>
+    );
+  return <InfraDiagram diagram={diagram} />;
 }
 
 function Changes({ page }: { page: KnowledgePage }) {

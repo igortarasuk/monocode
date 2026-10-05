@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ArchitectureDiagram } from "./infraDiagram";
 
 export type KnowledgeDoc = "user.md" | "model.md" | "infra.md" | "changes.md";
 
@@ -26,21 +27,30 @@ export type KnowledgePage = {
   changeLog: { day: string; summary: string }[];
   /** Hosts and services that another project's map names too. */
   shared: { name: string; projects: string[] }[];
+  /** `.monochrome/architecture.json`, drawn from the infrastructure map. */
+  architecture: ArchitectureDiagram | null;
 };
 
-export type KnowledgeTab = "overview" | "user" | "model" | "infra" | "changes";
+export type KnowledgeTab =
+  | "overview"
+  | "user"
+  | "model"
+  | "infra"
+  | "diagram"
+  | "changes";
 
 export const KNOWLEDGE_TABS: { id: KnowledgeTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "user", label: "Owner notes" },
   { id: "model", label: "Agent notes" },
   { id: "infra", label: "Infrastructure" },
+  { id: "diagram", label: "Diagram" },
   { id: "changes", label: "Changes" },
 ];
 
-/** The document a tab edits; the overview has none. */
+/** The document a tab edits; the overview and the diagram have none. */
 export function tabDoc(tab: KnowledgeTab): KnowledgeDoc | null {
-  if (tab === "overview") return null;
+  if (tab === "overview" || tab === "diagram") return null;
   return `${tab}.md` as KnowledgeDoc;
 }
 
