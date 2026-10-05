@@ -396,6 +396,9 @@ describe("GitChangesPanel folder actions", () => {
     );
     await renderPanel();
     await showTree();
+    // Earlier tests leave the panel's delayed 150 ms re-invalidation pending;
+    // let it fire before asserting that a failed stage triggers none.
+    await new Promise((resolve) => setTimeout(resolve, 200));
     invalidateWatchedFiles.mockClear();
     const stage = container.querySelector<HTMLButtonElement>(
       '[aria-label="Stage Changes in src"]',
