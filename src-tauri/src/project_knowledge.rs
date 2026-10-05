@@ -502,6 +502,21 @@ fn sync(
     })
 }
 
+/// Link the project's knowledge into a session's worktree, where the agent
+/// actually runs; without it `.monochrome/` only exists in the main checkout.
+fn mount_worktree(base: &Path, cwd: &str, work_cwd: &str) -> Result<(), String> {
+    let key = crate::auto_model::project_key(cwd)?;
+    let root = PathBuf::from(&key);
+    let work = PathBuf::from(crate::auto_model::project_key(work_cwd)?);
+    let dir = store_dir(base, &key);
+    if work == root || !work.is_dir() || !is_mounted(&root, &dir) {
+        return Ok(());
+    }
+    mount(&work, &dir)?;
+    exclude_from_git(&work);
+    Ok(())
+}
+
 fn record(
     conn: &mut Connection,
     base: &Path,
@@ -558,10 +573,17 @@ pub fn project_knowledge_sync(
     store: State<'_, SessionStore>,
     cwd: String,
     create: bool,
+    work_cwd: Option<String>,
 ) -> Result<KnowledgeStatus, String> {
     let base = base_dir(&app)?;
     let mut conn = store.lock_conn()?;
-    sync(&mut conn, &base, &cwd, create, now_millis())
+    let status = sync(&mut conn, &base, &cwd, create, now_millis())?;
+    if let Some(work_cwd) = work_cwd {
+        // The project's own mount is what counts; a worktree that cannot take
+        // the link just goes without it.
+        let _ = mount_worktree(&base, &cwd, &work_cwd);
+    }
+    Ok(status)
 }
 
 /// Add what a finished session learned and changed to the project knowledge.
@@ -812,6 +834,53 @@ mod tests {
         sync(&mut conn, &base, &cwd, false, 3).unwrap();
         let exclude = fs::read_to_string(project.join(".git/info/exclude")).unwrap();
         assert_eq!(exclude.matches(".monochrome\n").count(), 1);
+        let _ = fs::remove_dir_all(project.parent().unwrap());
+    }
+
+    #[test]
+    fn links_the_knowledge_into_a_session_worktree() {
+        let (base, project, cwd) = scratch();
+        let git = |dir: &Path, args: &[&str]| {
+            assert!(Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+                .args(args)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success());
+        };
+        git(&project, &["init", "-q"]);
+        git(&project, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        let worktree = project.parent().unwrap().join("worktree");
+        git(
+            &project,
+            &["worktree", "add", "-q", worktree.to_str().unwrap()],
+        );
+        let work_cwd = worktree.to_string_lossy().into_owned();
+        let mut conn = conn();
+
+        // No link until the project itself has the knowledge mounted.
+        mount_worktree(&base, &cwd, &work_cwd).unwrap();
+        assert!(fs::symlink_metadata(worktree.join(MOUNT)).is_err());
+
+        sync(&mut conn, &base, &cwd, true, 1).unwrap();
+        mount_worktree(&base, &cwd, &work_cwd).unwrap();
+        mount_worktree(&base, &cwd, &work_cwd).unwrap();
+        assert_eq!(
+            fs::read_link(worktree.join(MOUNT)).unwrap(),
+            fs::read_link(project.join(MOUNT)).unwrap()
+        );
+        assert!(worktree.join(MOUNT).join(USER_DOC).is_file());
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&worktree)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
+        assert!(status.stdout.is_empty());
         let _ = fs::remove_dir_all(project.parent().unwrap());
     }
 

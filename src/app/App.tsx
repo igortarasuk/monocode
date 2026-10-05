@@ -7084,7 +7084,12 @@ function Workspace({
                     sessionId,
                     cwd: workCwd,
                   }),
-                  { cwd: current.cwd, sessionId, firstTurn: isFirstTurn },
+                  {
+                    cwd: current.cwd,
+                    workCwd,
+                    sessionId,
+                    firstTurn: isFirstTurn,
+                  },
                 );
           const turnPrompt = proposalDraft
             ? options?.orchestrationRetry?.response
