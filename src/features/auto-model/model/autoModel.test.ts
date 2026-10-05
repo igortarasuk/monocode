@@ -69,7 +69,11 @@ const mid: AgentModel = {
   name: "Mid",
   settings: [effort(["low", "medium", "high"])],
 };
-const small: AgentModel = { id: "claude:small", harness: "claude", name: "Small" };
+const small: AgentModel = {
+  id: "claude:small",
+  harness: "claude",
+  name: "Small",
+};
 const models = [large, mid, small];
 
 const meta: ProjectMeta = {
@@ -267,7 +271,11 @@ describe("project knowledge pointer", () => {
   it("is added to the first prompt of a mounted project only", async () => {
     backend.invoke.mockImplementation(async (command, args) =>
       command === "project_knowledge_sync"
-        ? { mounted: (args as { create: boolean }).create, infra: [], changes: 0 }
+        ? {
+            mounted: (args as { create: boolean }).create,
+            infra: [],
+            changes: 0,
+          }
         : null,
     );
     const input = { cwd: "/work/acme", sessionId: "s1", firstTurn: true };
@@ -282,6 +290,30 @@ describe("project knowledge pointer", () => {
     ).toBe("more");
     backend.invoke.mockRejectedValue(new Error("no backend"));
     expect(await withProjectKnowledge("Fix login", input)).toBe("Fix login");
+  });
+
+  it("asks for the same link in the session's worktree", async () => {
+    backend.invoke.mockResolvedValue({ mounted: true, infra: [], changes: 0 });
+    const input = { cwd: "/work/acme", sessionId: "s1", firstTurn: true };
+    await withProjectKnowledge("Fix login", {
+      ...input,
+      workCwd: "/work/acme-worktrees/mc-1",
+    });
+    expect(backend.invoke).toHaveBeenLastCalledWith("project_knowledge_sync", {
+      cwd: "/work/acme",
+      create: false,
+      workCwd: "/work/acme-worktrees/mc-1",
+    });
+    // A session in the main checkout has no separate folder to link.
+    await withProjectKnowledge("Fix login", {
+      ...input,
+      workCwd: "/work/acme",
+    });
+    expect(backend.invoke).toHaveBeenLastCalledWith("project_knowledge_sync", {
+      cwd: "/work/acme",
+      create: false,
+      workCwd: null,
+    });
   });
 });
 
@@ -331,7 +363,13 @@ describe("gate", () => {
       },
       notify: (_id, text) => void notes.push(text),
     };
-    return { gate: createAutoModelGate(() => deps), sessions, sent, notes, done };
+    return {
+      gate: createAutoModelGate(() => deps),
+      sessions,
+      sent,
+      notes,
+      done,
+    };
   }
 
   it("stays out of the way when Auto is off", () => {
@@ -396,9 +434,9 @@ describe("gate", () => {
     registry.runHarnessTextPrompt.mockResolvedValue('{"same_task": true}');
     const { gate, sent, done } = setup(long());
 
-    expect(gate.intercept("s1", "the redirect still loops", [], undefined)).toBe(
-      "taken",
-    );
+    expect(
+      gate.intercept("s1", "the redirect still loops", [], undefined),
+    ).toBe("taken");
     await done;
 
     expect(sent.map((item) => item.sessionId)).toEqual(["s1"]);

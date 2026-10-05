@@ -8,13 +8,19 @@ import { isAutoModel, syncProjectKnowledge } from "./autoModelStore";
  */
 export async function withProjectKnowledge(
   prompt: string,
-  input: { cwd: string; sessionId: string; firstTurn: boolean },
+  input: {
+    cwd: string;
+    workCwd?: string;
+    sessionId: string;
+    firstTurn: boolean;
+  },
 ): Promise<string> {
   if (!input.firstTurn || !input.cwd || input.cwd === "~") return prompt;
   try {
     const status = await syncProjectKnowledge(
       input.cwd,
       isAutoModel(input.sessionId),
+      input.workCwd,
     );
     return status.mounted ? `${prompt}\n\n${KNOWLEDGE_POINTER}` : prompt;
   } catch {

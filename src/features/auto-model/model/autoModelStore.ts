@@ -173,12 +173,20 @@ export type KnowledgeStatus = {
   changes: number;
 };
 
-/** Copy the project's knowledge files into the database; `create` mounts them. */
+/**
+ * Copy the project's knowledge files into the database; `create` mounts them.
+ * `workCwd` is the session's worktree, which gets the same link.
+ */
 export function syncProjectKnowledge(
   cwd: string,
   create: boolean,
+  workCwd?: string,
 ): Promise<KnowledgeStatus> {
-  return invoke<KnowledgeStatus>("project_knowledge_sync", { cwd, create });
+  return invoke<KnowledgeStatus>("project_knowledge_sync", {
+    cwd,
+    create,
+    workCwd: workCwd && workCwd !== cwd ? workCwd : null,
+  });
 }
 
 /** Add what a session learned and changed to the project knowledge. */
@@ -195,6 +203,8 @@ export function saveSessionTask(task: SessionTask): Promise<void> {
   return invoke("auto_model_session_set", { task });
 }
 
-export function loadSessionTask(sessionId: string): Promise<SessionTask | null> {
+export function loadSessionTask(
+  sessionId: string,
+): Promise<SessionTask | null> {
   return invoke<SessionTask | null>("auto_model_session_get", { sessionId });
 }
