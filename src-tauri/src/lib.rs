@@ -3,6 +3,7 @@ use tauri::Manager;
 mod account_identity;
 mod app_release;
 mod assistants;
+mod auto_model;
 mod automations;
 mod azure_devops;
 mod chat_background;
@@ -34,6 +35,7 @@ mod pasteboard;
 mod path_probe;
 mod pi_usage;
 mod planning;
+mod project_knowledge;
 mod project_logo;
 mod pty;
 #[cfg(target_os = "macos")]
@@ -297,6 +299,13 @@ pub fn run() {
             notifications::request_notification_permission,
             notifications::show_notification,
             notifications::open_notification_settings,
+            auto_model::auto_model_project,
+            project_knowledge::project_knowledge_sync,
+            project_knowledge::project_knowledge_record,
+            project_knowledge::project_knowledge_page,
+            project_knowledge::project_knowledge_write,
+            auto_model::auto_model_session_set,
+            auto_model::auto_model_session_get,
             reminders::reminder_list,
             reminders::reminder_set,
             reminders::reminder_clear,

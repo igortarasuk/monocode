@@ -108,6 +108,8 @@ import {
   type SlashToken,
 } from "../../skills/model/skills";
 import { AccessPicker } from "./AccessPicker";
+import { AutoModelToggle } from "../../auto-model/ui/AutoModelToggle";
+import { ProjectKnowledgeButton } from "../../auto-model/ui/ProjectKnowledgeButton";
 import { ComposerRunner } from "./ComposerRunner";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
@@ -2608,6 +2610,12 @@ export function Composer({
                   }
                   onClose={() => ref.current?.focus()}
                 />
+                {sessionId && !compact && !remote ? (
+                  <AutoModelToggle sessionId={sessionId} />
+                ) : null}
+                {cwd && !compact && !remote ? (
+                  <ProjectKnowledgeButton cwd={cwd} />
+                ) : null}
                 {controlsBeside ? (
                   <ModelControlPills
                     harness={harness}

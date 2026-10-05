@@ -294,6 +294,9 @@ import {
   wrapHandoffPrompt,
 } from "../features/sessions/model/handoff";
 import { requestOutgoingHandoff } from "../features/sessions/model/handoffTurn";
+import { pinSessionModel } from "../features/auto-model/model/autoModelStore";
+import { useAutoModelGate } from "../features/auto-model/model/useAutoModelGate";
+import { withProjectKnowledge } from "../features/auto-model/model/projectKnowledge";
 import {
   applyBtwHarnessEvent,
   btwTurnHarness,
@@ -765,6 +768,8 @@ type SubmitOptions = ComposerTurnOptions & {
   projectLocationReady?: boolean;
   /** Show and join a turn sent through Remote Control; the provider has it. */
   remoteTurn?: boolean;
+  /** Internal guard for the send that follows the Auto model check. */
+  autoModelReady?: boolean;
 };
 
 type Submit = (
@@ -5939,6 +5944,7 @@ function Workspace({
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       if (!current) return;
       if (isPreparingHandoff(current)) return;
+      pinSessionModel(sessionId);
       const resolved = resolveModel(harness, model);
       saveRecentModelChoice(resolved.harness, resolved.id);
       if (current.modelSettings) {
@@ -6144,6 +6150,45 @@ function Workspace({
     [enqueueHarnessEvent],
   );
 
+  const autoModelGate = useAutoModelGate<SubmitOptions>({
+    getSession: (sessionId) =>
+      sessionsRef.current.find((session) => session.id === sessionId),
+    applyRoute: (sessionId, model, modelSettings) => {
+      const next = sessionsRef.current.map((session) =>
+        session.id === sessionId
+          ? withHarnessChoice(session, session.harness, model.id, modelSettings)
+          : session,
+      );
+      sessionsRef.current = next;
+      setSessions(next);
+    },
+    openSession: (source, model, modelSettings) => {
+      const session = {
+        ...newSession(source.harness, source.cwd, model.id, source.runtimeMode),
+        modelSettings,
+        ...(source.providerAccountId
+          ? { providerAccountId: source.providerAccountId }
+          : {}),
+        ...(source.worktreeCwd
+          ? { worktreeCwd: source.worktreeCwd, branch: source.branch }
+          : {}),
+      };
+      const tab = newTab(session.id);
+      sessionsRef.current = [...sessionsRef.current, session];
+      setSessions(sessionsRef.current);
+      appendTab(tab, source.cwd);
+      setActiveTabId(tab.id);
+      setComposerFocused(true);
+      return session.id;
+    },
+    submit: (sessionId, text, attachments, options) =>
+      submitSessionRef.current(sessionId, text, attachments, options),
+    notify: (sessionId, text) => {
+      enqueueHarnessEvent(sessionId, { type: "status", text });
+      flushHarnessEvents();
+    },
+  });
+
   const submitSession = useCallback(
     (
       sessionId: string,
@@ -6159,6 +6204,13 @@ function Workspace({
         : parseRemoteControlCommand(text);
       if (remoteControl && attachments.length === 0)
         return setRemoteControl(sessionId, remoteControl);
+      const autoModel = autoModelGate.intercept(
+        sessionId,
+        text,
+        attachments,
+        options,
+      );
+      if (autoModel) return autoModel === "taken";
       if (editedResends.isActive(sessionId)) return false;
       // Output already received belongs before the submitted user message.
       // Flush before reading the session too, since pending errors can settle it.
@@ -7026,11 +7078,14 @@ function Workspace({
           const prompt =
             intent === "build" && approvedPlan
               ? buildPlanPrompt(approvedPlan.text)
-              : await preparePrompt(harnessText, {
-                  harness: current.harness,
-                  sessionId,
-                  cwd: workCwd,
-                });
+              : await withProjectKnowledge(
+                  await preparePrompt(harnessText, {
+                    harness: current.harness,
+                    sessionId,
+                    cwd: workCwd,
+                  }),
+                  { cwd: current.cwd, sessionId, firstTurn: isFirstTurn },
+                );
           const turnPrompt = proposalDraft
             ? options?.orchestrationRetry?.response
               ? orchestrationRepairPrompt({
