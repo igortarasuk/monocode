@@ -275,10 +275,12 @@ fn menu(
         .build(app)?;
     let mut builder = MenuBuilder::new(app).item(&header).separator();
     if monos.is_empty() {
-        let empty =
-            MenuItemBuilder::with_id("mono-chat-empty", "Create a Mono in Monochrome to chat here")
-                .enabled(false)
-                .build(app)?;
+        let empty = MenuItemBuilder::with_id(
+            "mono-chat-empty",
+            "Create a Mono in Monochrome to chat here",
+        )
+        .enabled(false)
+        .build(app)?;
         builder = builder.item(&empty);
     } else {
         for mono in monos {
