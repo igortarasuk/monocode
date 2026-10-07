@@ -56,3 +56,5 @@ Desktop.ini
 
 # Manjaro container build output
 out-docker/
+# Local document preview mockup
+/work/mono-document-preview.html
