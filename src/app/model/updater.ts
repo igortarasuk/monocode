@@ -1,4 +1,4 @@
-import { getVersion } from "@tauri-apps/api/app";
+import { BundleType, getBundleType, getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -22,6 +22,8 @@ export type UpdaterSnapshot = {
   availableVersion?: string;
   progress?: number;
   error?: string;
+  /** Set on Linux .deb/.rpm installs, which update through apt/dnf. */
+  packageManaged?: PackageManagedInstall;
 };
 
 let pendingUpdate: Update | null = null;
@@ -29,6 +31,40 @@ let pendingUpdate: Update | null = null;
 /** A newer GitHub release for builds without an updater feed. */
 type AppRelease = { version: string; url: string };
 let pendingRelease: AppRelease | null = null;
+
+const RELEASES_URL = "https://github.com/igortarasuk/monocode/releases/latest";
+
+/**
+ * Linux `.deb` and `.rpm` installs belong to apt/dnf. The release feed only
+ * publishes an AppImage target, so the plugin reports no matching platform
+ * for them; surface that as "update through your package manager" instead of
+ * a raw error, and never self-install.
+ */
+export type PackageManagedInstall = "deb" | "rpm";
+
+export async function packageManagedInstall(): Promise<PackageManagedInstall | null> {
+  let type: string | null;
+  try {
+    type = await getBundleType();
+  } catch {
+    return null;
+  }
+  if (type === BundleType.Deb) return "deb";
+  if (type === BundleType.Rpm) return "rpm";
+  return null;
+}
+
+export function packageManagerHint(kind: PackageManagedInstall): string {
+  return kind === "deb"
+    ? `Download one .deb from ${RELEASES_URL} and run: sudo apt install ./Monochrome_X.Y.Z_amd64.deb\nReplace the file name with the one you downloaded.`
+    : `Download one .rpm from ${RELEASES_URL} and run: sudo dnf install ./Monochrome-X.Y.Z-1.x86_64.rpm\nReplace the file name with the one you downloaded.`;
+}
+
+function isTargetMissingError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  // tauri-plugin-updater Error::TargetsNotFound / Error::TargetNotFound.
+  return /none of the fallback platforms|the platform `[^`]*` was not found/i.test(text);
+}
 
 function isUpdaterNotConfiguredError(error: unknown): boolean {
   const text = error instanceof Error ? error.message : String(error);
@@ -114,6 +150,16 @@ export async function runUpdateFlow(
   const base: UpdaterSnapshot = { phase: "checking", currentVersion };
   onProgress?.(base);
 
+  const managed = await packageManagedInstall();
+  if (managed) {
+    // apt/dnf own the install, but the release check still tells about a
+    // new version and links to its page.
+    const checked = await runReleaseCheck(manual, currentVersion);
+    const snapshot: UpdaterSnapshot = { ...checked, packageManaged: managed };
+    onProgress?.(snapshot);
+    return snapshot;
+  }
+
   try {
     const update = await check();
     if (!update) {
@@ -149,6 +195,20 @@ export async function runUpdateFlow(
   } catch (err) {
     if (isUpdaterNotConfiguredError(err)) {
       return runReleaseCheck(manual, currentVersion, onProgress);
+    }
+
+    if (isTargetMissingError(err)) {
+      // The feed has no build for this platform/installer yet.
+      pendingUpdate = null;
+      const idle: UpdaterSnapshot = { phase: "idle", currentVersion };
+      onProgress?.(idle);
+      if (manual) {
+        await message(
+          `Automatic updates aren't available for this install yet.\n\nDownload releases at ${RELEASES_URL}`,
+          { title: "Monochrome" },
+        );
+      }
+      return idle;
     }
 
     const error = err instanceof Error ? err.message : String(err);

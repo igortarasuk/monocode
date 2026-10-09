@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getVersion, check, message, ask, relaunch, invoke, openUrl } = vi.hoisted(() => ({
+const { getVersion, getBundleType, check, message, ask, relaunch, invoke, openUrl } = vi.hoisted(() => ({
   getVersion: vi.fn(),
+  getBundleType: vi.fn(),
   invoke: vi.fn(),
   openUrl: vi.fn(),
   check: vi.fn(),
@@ -10,7 +11,11 @@ const { getVersion, check, message, ask, relaunch, invoke, openUrl } = vi.hoiste
   relaunch: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/api/app", () => ({ getVersion }));
+vi.mock("@tauri-apps/api/app", () => ({
+  getVersion,
+  getBundleType,
+  BundleType: { Nsis: "nsis", Msi: "msi", Deb: "deb", Rpm: "rpm", AppImage: "appimage", App: "app" },
+}));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask, message }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch }));
@@ -18,9 +23,13 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 vi.mock("../../features/settings/model/sounds", () => ({ announceUpdateAvailable: vi.fn() }));
 
-import { runUpdateFlow } from "./updater";
+import { packageManagerHint, probeForUpdate, runUpdateFlow } from "./updater";
 
 describe("updater", () => {
+  beforeEach(() => {
+    getBundleType.mockResolvedValue("appimage");
+  });
+
   afterEach(() => {
     vi.resetAllMocks();
   });
@@ -95,5 +104,69 @@ describe("updater", () => {
       error: "network failed",
     });
     expect(message).toHaveBeenCalledOnce();
+  });
+
+  it.each(["deb", "rpm"] as const)("names one %s installer and the releases URL", (kind) => {
+    const hint = packageManagerHint(kind);
+    expect(hint).toContain("https://github.com/igortarasuk/monocode/releases/latest");
+    expect(hint).not.toMatch(/[*<>]/);
+    expect(hint).toContain("Replace the file name");
+    expect(hint).toContain(kind === "deb" ? "sudo apt install ./Monochrome_X.Y.Z_amd64.deb" : "sudo dnf install ./Monochrome-X.Y.Z-1.x86_64.rpm");
+  });
+
+  it.each(["deb", "rpm"] as const)(
+    "checks releases for %s installs without touching the feed",
+    async (kind) => {
+      getVersion.mockResolvedValue("0.9.0");
+      getBundleType.mockResolvedValue(kind);
+      invoke.mockResolvedValue({ version: "0.9.1", url: "https://example.com/r" });
+      ask.mockResolvedValue(false);
+
+      await expect(runUpdateFlow(true)).resolves.toEqual({
+        phase: "available",
+        currentVersion: "0.9.0",
+        availableVersion: "0.9.1",
+        packageManaged: kind,
+      });
+      expect(check).not.toHaveBeenCalled();
+    },
+  );
+
+  it("probes releases for package-managed installs", async () => {
+    getVersion.mockResolvedValue("0.9.0");
+    getBundleType.mockResolvedValue("deb");
+    check.mockRejectedValue(new Error("Updater does not have any endpoints set"));
+    invoke.mockResolvedValue(null);
+
+    await expect(probeForUpdate()).resolves.toBeNull();
+  });
+
+  it("still checks the feed for AppImage installs", async () => {
+    getVersion.mockResolvedValue("0.9.0");
+    check.mockResolvedValue(null);
+
+    await expect(runUpdateFlow(false)).resolves.toEqual({
+      phase: "current",
+      currentVersion: "0.9.0",
+    });
+    expect(check).toHaveBeenCalledOnce();
+  });
+
+  it("treats a feed without this platform as unavailable, not as a failure", async () => {
+    getVersion.mockResolvedValue("0.9.0");
+    check.mockRejectedValue(
+      new Error(
+        'None of the fallback platforms `["linux-x86_64-deb", "linux-x86_64"]` were found in the response `platforms` object',
+      ),
+    );
+
+    await expect(runUpdateFlow(true)).resolves.toEqual({
+      phase: "idle",
+      currentVersion: "0.9.0",
+    });
+    expect(message).toHaveBeenCalledWith(
+      expect.stringContaining("aren't available for this install yet"),
+      { title: "Monochrome" },
+    );
   });
 });

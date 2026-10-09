@@ -411,7 +411,7 @@ function ChangedFiles({
   const canCommitPush =
     canCommit && hasRemote && !diverged && (!amend || !index?.headPushed);
   const canCommitPushPr = canCommitPush && !hasOpenPr && !onDefault;
-  const canEditMessage = (staged.length > 0 || amend) && !busy;
+  const canEditMessage = !busy;
 
   useEffect(() => {
     if (!amendTarget) return;
@@ -970,7 +970,7 @@ function ChangedFiles({
   );
 }
 
-function usePrStatus(
+export function usePrStatus(
   cwd: string,
   branch: string | null | undefined,
 ): { pr: GitPr | null; reload: () => void } {
@@ -1015,7 +1015,7 @@ function reviewNoun(provider: ReviewProvider): string {
   return provider === "gitlab" ? "merge request" : "pull request";
 }
 
-function useReviewProvider(
+export function useReviewProvider(
   cwd: string,
   remote: string | null | undefined,
 ): ReviewProvider {
@@ -1061,7 +1061,7 @@ function syncStatusLabel(index: GitDiffIndex): string {
   return "No files";
 }
 
-function GitSyncActions({
+export function GitSyncActions({
   index,
   pr,
   provider,
@@ -1570,7 +1570,7 @@ function ChangeRow({
           onDoubleClick={() => {
             if (canOpen) onOpenFile(file.path, kind, true);
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
         >
           {tree ? <span className="size-4 shrink-0" /> : null}
           <FileTypeIcon name={name} isDir={false} size={16} />

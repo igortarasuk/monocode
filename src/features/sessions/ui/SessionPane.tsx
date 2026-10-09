@@ -220,6 +220,8 @@ export type SessionPaneProps = {
     path?: string,
     session?: { sessionId: string; cwd: string },
   ) => void;
+  /** Offer committing a settled turn's changes from its review card. */
+  onCommitChanges?: (session: { sessionId: string; cwd: string }) => void;
   onOpenPlan: (sessionId: string, blockId: string) => void;
   onBuildPlan: (
     sessionId: string,
@@ -342,6 +344,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onQuestionInteraction,
   onOpenFile,
   onOpenDiff,
+  onCommitChanges,
   onShowMonoActivity,
   monoActivityTurnId,
   onShowMonoSessions,
@@ -1059,6 +1062,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                             )
                           }
                           onOpenDiff={onOpenDiff}
+                          onCommit={onCommitChanges}
                         />
                       )
                     }
