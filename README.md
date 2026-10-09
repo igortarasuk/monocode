@@ -23,10 +23,26 @@ MonoCode is a desktop app that runs the coding agents you already pay for (Claud
   <img src="docs/monochrome/footer.png" alt="Footer with usage and GitLab pipeline status" width="391" />
 
 - SSH remotes on a different host than the web UI (for example `git.example.com` vs `gitlab.example.com`) are recognised, for both merge requests and the Inbox.
+- Generated commit messages and merge request descriptions follow the project's own instructions first, stay short, and never carry AI co-author or "Generated with" lines.
 
 **Linear**
 - Issue IDs such as `[OPS-42]` found in your commit subjects or branch name go into the merge request title, with a `Refs` line in the description, so Linear links them.
-- A sprint calendar with planned hours, and a *Plan week* panel that turns a week's plan into Linear issues.
+- A sprint calendar with planned hours, and a *Plan week* panel that turns a week's plan into Linear issues. Every planned item gets a label.
+- Calendar cards and the issue panel flag what a hygiene report would: no due date, label, estimate or description, overdue, stale for a week. Closing an issue asks for a closing comment.
+- Finished issues show a green check in the Inbox; red is kept for canceled ones.
+
+**Agent chat**
+- `! command` in the composer, and the *Run* button on shell blocks and `! command` blocks in a reply, run the command in a real terminal, so logins and `sudo` prompts work. The agent is told the exit status, never the output.
+- When a reply ends with a question, *Yes* and *No* buttons under it send the answer in one click.
+- `/rc` continues a Claude chat from a phone with Remote Control.
+- *Auto* in the composer lets a small model pick the model for a new task; a model you picked by hand is never switched.
+
+**Project knowledge**
+- Each project has a `.monochrome` folder, kept out of git, with owner notes, what agents learned, an infrastructure map (hosts, services, access, checks) and a change log. Agents read it at the start of a session and keep it up to date.
+- The *Diagram* tab shows the interactive architecture page an agent renders with the [Archify](https://github.com/tt-a1i/archify) skill, and can ask an agent to draw or update it.
+
+**Editor**
+- Highlighting for Terraform, Ansible and Jinja, with findings from external linters shown in the editor, and `govulncheck` after a commit in Go projects.
 
 **Accounts**
 
@@ -40,6 +56,8 @@ MonoCode is a desktop app that runs the coding agents you already pay for (Claud
 
 **Linux desktop**
 - Transparent window, resizing from the window edges on Wayland, a Nerd Font in the terminal for Powerlevel10k, and a sharper monospace font.
+- An OLED theme: a pure black page with transparency off, neutral text below full brightness, and every color mapped to pure red, green, red+green or blue, so it lights as few subpixels as possible.
+- Releases are Linux-only (deb, rpm, AppImage), and the app checks this repository for new versions.
 - Pasting images and files from the clipboard, and a PDF viewer (upstream pull requests #479 and #383, merged early).
 - A container build for Manjaro (`Dockerfile.manjaro`).
 
