@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-09
+
 ### Added
 
 - Calendar cards and the issue panel show what a Linear hygiene report would score against: no due date, no label, no estimate, no description, overdue, due today, no comment or change for a week, and a parent due before its subtasks. The sprint header counts the issues to fix.
