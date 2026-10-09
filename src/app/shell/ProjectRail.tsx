@@ -86,7 +86,6 @@ import { InboxNotificationMenu } from "../../features/inbox/ui/InboxNotification
 import { notificationMuteStatus } from "../../features/notifications/ui/notificationMuteActions";
 import { useProjectNotificationPreferences } from "../../features/notifications/hooks/useProjectNotificationPreferences";
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
-import { GithubStarPrompt } from "./GithubStarPrompt";
 import { Popover } from "../../shared/ui/Popover";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import {
@@ -563,7 +562,6 @@ export function ProjectRail({
             onDismissUpdate={onDismissUpdate}
           />
           <div className="flex shrink-0 flex-col gap-px p-2">
-            <GithubStarPrompt />
             <RailAction
               label="Settings"
               icon={Settings}
