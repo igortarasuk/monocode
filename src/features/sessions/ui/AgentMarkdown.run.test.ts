@@ -58,3 +58,18 @@ it("offers Run for inline ! commands but not for other code", async () => {
   expect(runs).toEqual([{ command: "gcloud auth login", cwd: "/home/me/app" }]);
   act(() => root.unmount());
 });
+
+it("offers Run for an untagged block of ! commands", async () => {
+  const root = await render(
+    "Vault password:\n\n```\n! echo 'password' > ~/.vault-pass\n```\n\nConfig:\n\n```\nkey = !value\n```\n",
+  );
+  const buttons = container.querySelectorAll<HTMLButtonElement>(
+    'button[aria-label="Run in terminal"]',
+  );
+  expect(buttons).toHaveLength(1);
+  await act(async () => buttons[0].click());
+  expect(runs).toEqual([
+    { command: "echo 'password' > ~/.vault-pass", cwd: "/home/me/app" },
+  ]);
+  act(() => root.unmount());
+});

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bangCommand,
+  isBangBlock,
   isShellLanguage,
   queueTerminalInput,
   shellCommandFromCode,
@@ -26,6 +27,14 @@ describe("run in terminal", () => {
     );
     expect(isShellLanguage("Bash")).toBe(true);
     expect(isShellLanguage("python")).toBe(false);
+  });
+
+  it("recognises blocks made only of ! commands", () => {
+    expect(isBangBlock("! echo 'password' > ~/.vault-pass\n")).toBe(true);
+    expect(isBangBlock("! tsh login\n\n!kubectl get pods")).toBe(true);
+    expect(isBangBlock("! tsh login\nthen wait")).toBe(false);
+    expect(isBangBlock("if (!ready) return;")).toBe(false);
+    expect(isBangBlock("\n")).toBe(false);
   });
 
   it("hands queued input to the terminal once", () => {

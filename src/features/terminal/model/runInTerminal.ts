@@ -49,6 +49,15 @@ export function isShellLanguage(language: string | undefined): boolean {
 }
 
 /**
+ * A block where every line is a `! command`, the form agents use to ask for a
+ * command to be run by hand. They often leave such a fence untagged.
+ */
+export function isBangBlock(code: string): boolean {
+  const lines = code.split(/\r\n?|\n/).filter((line) => line.trim());
+  return lines.length > 0 && lines.every((line) => bangCommand(line) !== null);
+}
+
+/**
  * Commands from a shell block: prompt markers (`$ `, `! `) are removed, and
  * in a console transcript only the prompted lines are commands.
  */

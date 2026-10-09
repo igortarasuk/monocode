@@ -2,6 +2,7 @@ import { Play } from "../../../shared/ui/icons";
 import { useFileReferenceExists } from "../../files/model/fileReferenceExists";
 import {
   bangCommand,
+  isBangBlock,
   isShellLanguage,
   requestRunInTerminal,
   shellCommandFromCode,
@@ -405,7 +406,9 @@ function MarkdownCode({
         <span className="markdown-code-fallback-label">{fence.language}</span>
       ) : null}
       <CodeCopyButton code={code} />
-      {!incomplete && isShellLanguage(fence.language) ? (
+      {!incomplete &&
+      (isShellLanguage(fence.language) ||
+        (isPlaintextFallback && isBangBlock(code))) ? (
         <CodeRunButton command={shellCommandFromCode(code)} />
       ) : null}
       <HighlightedCodeBlock
