@@ -38,7 +38,7 @@ describe("updater", () => {
     check.mockRejectedValue(new Error("Updater does not have any endpoints set"));
   const release = {
     version: "0.1.24",
-    url: "https://github.com/igortarasuk/monocode/releases/tag/v0.1.24",
+    url: "https://github.com/igortarasuk/monochrome/releases/tag/v0.1.24",
   };
 
   it("reports a newer GitHub release quietly on automatic checks", async () => {
@@ -108,7 +108,7 @@ describe("updater", () => {
 
   it.each(["deb", "rpm"] as const)("names one %s installer and the releases URL", (kind) => {
     const hint = packageManagerHint(kind);
-    expect(hint).toContain("https://github.com/igortarasuk/monocode/releases/latest");
+    expect(hint).toContain("https://github.com/igortarasuk/monochrome/releases/latest");
     expect(hint).not.toMatch(/[*<>]/);
     expect(hint).toContain("Replace the file name");
     expect(hint).toContain(kind === "deb" ? "sudo apt install ./Monochrome_X.Y.Z_amd64.deb" : "sudo dnf install ./Monochrome-X.Y.Z-1.x86_64.rpm");

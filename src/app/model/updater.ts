@@ -32,7 +32,7 @@ let pendingUpdate: Update | null = null;
 type AppRelease = { version: string; url: string };
 let pendingRelease: AppRelease | null = null;
 
-const RELEASES_URL = "https://github.com/igortarasuk/monocode/releases/latest";
+const RELEASES_URL = "https://github.com/igortarasuk/monochrome/releases/latest";
 
 /**
  * Linux `.deb` and `.rpm` installs belong to apt/dnf. The release feed only

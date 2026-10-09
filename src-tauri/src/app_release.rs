@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::Value;
 
-const RELEASES_URL: &str = "https://api.github.com/repos/igortarasuk/monocode/releases?per_page=30";
+const RELEASES_URL: &str = "https://api.github.com/repos/igortarasuk/monochrome/releases?per_page=30";
 const USER_AGENT: &str = "Monochrome";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -70,13 +70,13 @@ mod tests {
     fn reads_version_and_page_from_a_release() {
         let body = json!({
             "tag_name": "v0.6.1",
-            "html_url": "https://github.com/igortarasuk/monocode/releases/tag/v0.6.1"
+            "html_url": "https://github.com/igortarasuk/monochrome/releases/tag/v0.6.1"
         });
         assert_eq!(
             release_from_json(&body),
             Some(AppRelease {
                 version: "0.6.1".into(),
-                url: "https://github.com/igortarasuk/monocode/releases/tag/v0.6.1".into(),
+                url: "https://github.com/igortarasuk/monochrome/releases/tag/v0.6.1".into(),
             })
         );
     }
