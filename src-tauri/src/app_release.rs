@@ -8,7 +8,8 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::Value;
 
-const RELEASES_URL: &str = "https://api.github.com/repos/igortarasuk/monochrome/releases?per_page=30";
+const RELEASES_URL: &str =
+    "https://api.github.com/repos/igortarasuk/monochrome/releases?per_page=30";
 const USER_AGENT: &str = "Monochrome";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
