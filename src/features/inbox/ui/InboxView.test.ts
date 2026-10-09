@@ -68,6 +68,21 @@ describe("InboxDetail layout", () => {
     expect(notPlanned.className).toBe("text-rose-400/90");
   });
 
+  it("marks finished Linear and Jira issues green and canceled ones red", () => {
+    const done = inboxStatusMark(
+      item({ kind: "linear", stateType: "completed" }),
+    );
+    expect(done.Icon.displayName).toBe("CheckCircle");
+    expect(done.className).toBe("text-emerald-400/90");
+    expect(
+      inboxStatusMark(item({ kind: "jira", stateType: "done" })).className,
+    ).toBe("text-emerald-400/90");
+    expect(
+      inboxStatusMark(item({ kind: "linear", stateType: "canceled" }))
+        .className,
+    ).toBe("text-rose-400/90");
+  });
+
   it("renders a linked item as a standalone, closable side panel", () => {
     const target: LinkedWorkItem = {
       kind: "issue",

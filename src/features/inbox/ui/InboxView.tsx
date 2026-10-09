@@ -1477,6 +1477,14 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
     return { Icon: GitMerge, className: "text-violet-400/90", label };
   }
   if (label === "Closed") {
+    // Finished work is not a warning: only canceled issues keep the red mark.
+    const type = item.stateType?.trim().toLowerCase();
+    if (
+      (item.kind === "linear" && type === "completed") ||
+      (item.kind === "jira" && type === "done")
+    ) {
+      return { Icon: CheckCircle, className: "text-emerald-400/90", label };
+    }
     if (
       item.provider === "github" &&
       item.kind === "issue" &&
