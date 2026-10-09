@@ -1007,6 +1007,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       session.worktreeRemoved ? undefined : buildPlan
                     }
                     planBuildTargets={!remote}
+                    onQuickReply={
+                      session.worktreeRemoved
+                        ? undefined
+                        : (text) => void onSubmit(session.id, text, [])
+                    }
                     onSecondOpinion={
                       !agent &&
                       !session.inboxAsk &&

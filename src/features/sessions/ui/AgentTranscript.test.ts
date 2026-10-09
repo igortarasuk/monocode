@@ -41,6 +41,31 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).not.toContain("ml-auto flex shrink-0 items-center gap-2.5");
   });
 
+  it("offers Yes and No under the latest reply that ends with a question", () => {
+    const blocks: Block[] = [
+      { id: "user", role: "user", text: "Deploy", durationMs: 2_000 },
+      { id: "answer", role: "assistant", text: "Ready.\n\nShould I continue?" },
+    ];
+    const props = { blocks, busy: false, onQuickReply: () => {} };
+    const markup = renderToStaticMarkup(createElement(AgentTranscript, props));
+    expect(markup).toContain("data-quick-replies");
+    expect(markup).toContain(">Yes</button>");
+    expect(markup).toContain(">No</button>");
+
+    const working = renderToStaticMarkup(
+      createElement(AgentTranscript, { ...props, busy: true }),
+    );
+    expect(working).not.toContain("data-quick-replies");
+
+    const statement = renderToStaticMarkup(
+      createElement(AgentTranscript, {
+        ...props,
+        blocks: [blocks[0], { id: "answer", role: "assistant", text: "Done." }],
+      }),
+    );
+    expect(statement).not.toContain("data-quick-replies");
+  });
+
   it("shows a /operator request without the command in its amber bubble", () => {
     const markup = render([
       { id: "user", role: "user", text: "list my notes", monocode: true },

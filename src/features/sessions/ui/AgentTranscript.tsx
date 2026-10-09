@@ -73,6 +73,7 @@ import {
 } from "../../../integrations/harness/core/preview";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Attachment } from "../model/session";
+import { turnAsksQuestion } from "../model/quickReply";
 import { visibleUserPrompt } from "../../orchestration/model/orchestration";
 import { playCue } from "../../settings/model/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
@@ -234,6 +235,8 @@ type Props = {
   planBuildTargets?: boolean;
   onSecondOpinion?: (target: ModelTarget, turn: Block[]) => void;
   onHandoff?: (target: ModelTarget, turn: Block[]) => void;
+  /** Sends a one-click answer when the latest reply ends with a question. */
+  onQuickReply?: (text: string) => void;
   onEditLastTurn?: () => void;
   editingLastTurn?: boolean;
   onJumpToBottomChange?: (show: boolean) => void;
@@ -297,6 +300,7 @@ function AgentTranscriptComponent({
   planBuildTargets = true,
   onSecondOpinion,
   onHandoff,
+  onQuickReply,
   onEditLastTurn,
   editingLastTurn = false,
   onJumpToBottomChange,
@@ -1469,6 +1473,15 @@ function AgentTranscriptComponent({
                   onHandoff={
                     onHandoff ? (target) => onHandoff(target, turn) : undefined
                   }
+                  onQuickReply={
+                    isLastTurn &&
+                    !busy &&
+                    !pendingQuestion &&
+                    onQuickReply &&
+                    turnAsksQuestion(turn)
+                      ? onQuickReply
+                      : undefined
+                  }
                 />
               ) : null}
             </div>
@@ -1632,6 +1645,7 @@ function TurnDuration({
   fromModel,
   onSecondOpinion,
   onHandoff,
+  onQuickReply,
 }: {
   elapsedMs: number | null;
   label?: string;
@@ -1653,6 +1667,7 @@ function TurnDuration({
   fromModel?: string;
   onSecondOpinion?: (target: ModelTarget) => void;
   onHandoff?: (target: ModelTarget) => void;
+  onQuickReply?: (text: string) => void;
 }) {
   const label =
     completionLabel ?? formatWorkingDuration(elapsedMs, modelName, true);
@@ -1739,9 +1754,26 @@ function TurnDuration({
           </span>
         </span>
       ) : null}
+      {onQuickReply ? (
+        <span data-quick-replies className="ml-auto flex shrink-0 gap-1.5">
+          {QUICK_REPLIES.map((reply) => (
+            <button
+              key={reply}
+              type="button"
+              title={`Reply "${reply}"`}
+              onClick={() => onQuickReply(reply)}
+              className="rounded-md border border-content/15 px-2.5 py-0.5 text-xs text-content/70 outline-none hover:bg-content/8 hover:text-content focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              {reply}
+            </button>
+          ))}
+        </span>
+      ) : null}
     </div>
   );
 }
+
+const QUICK_REPLIES = ["Yes", "No"];
 
 function TurnMetricsBadge({
   metrics,
