@@ -69,6 +69,7 @@ import {
 import type { HarnessId } from "../../sessions/model/session";
 import { recordInboxSelfActivity } from "../../inbox/model/inboxSelfActivity";
 import { findLinearIds, withLinearRefs } from "../model/linearRef";
+import { stripAttribution } from "../model/gitText";
 import {
   loadChangesView,
   saveChangesView,
@@ -682,7 +683,11 @@ function ChangedFiles({
       commitSummary: range?.commitSummary ?? "",
       branch: content.head,
     });
-    const linked = withLinearRefs(content, ids);
+    // The fallback body is the raw commit list, trailers included.
+    const linked = withLinearRefs(
+      { ...content, body: stripAttribution(content.body) },
+      ids,
+    );
     const url = await gitPrCreate(
       cwd,
       linked.title,

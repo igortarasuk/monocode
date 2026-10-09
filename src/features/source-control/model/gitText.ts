@@ -10,6 +10,15 @@ export type PrContent = {
   body: string;
 };
 
+/**
+ * The project's own instructions outrank the defaults below: the helper runs
+ * in the repository, so it has already read them and the user's memory.
+ */
+const PROJECT_RULES = [
+  "- if the project instructions or your memory describe how to write commits or change requests here (format, language, length, prefixes), follow them over the rules below",
+  "- never add Co-Authored-By, Signed-off-by or 'Generated with' lines, or any other mention of an AI tool or assistant",
+];
+
 export function buildCommitMessagePrompt(input: {
   branch: string | null;
   stagedSummary: string;
@@ -24,8 +33,9 @@ export function buildCommitMessagePrompt(input: {
       : "Return a JSON object with keys: subject, body.",
     "Do not call tools. Reply with JSON only.",
     "Rules:",
+    ...PROJECT_RULES,
     "- subject must be imperative, <= 72 chars, and no trailing period",
-    "- body can be empty string or short bullet points",
+    "- body is an empty string unless the change needs explaining; then at most a few short lines",
     ...(wantsBranch
       ? ["- branch must be a short semantic git branch fragment for this change"]
       : []),
@@ -53,10 +63,10 @@ export function buildPrContentPrompt(input: {
     "Return a JSON object with keys: title, body.",
     "Do not call tools. Reply with JSON only.",
     "Rules:",
+    ...PROJECT_RULES,
     "- title should be concise and specific",
-    "- body must be markdown and include headings '## Summary' and '## Testing'",
-    "- under Summary, provide short bullet points",
-    "- under Testing, include bullet points with concrete checks or 'Not run' where appropriate",
+    "- body is short markdown: what changed and why, in at most five brief bullet points",
+    "- no headings, no testing section, and no restating of the diff file by file",
     "",
     `Base branch: ${input.baseBranch}`,
     `Head branch: ${input.headBranch}`,
@@ -87,6 +97,22 @@ export function buildBranchNamePrompt(message: string): string {
   ].join("\n");
 }
 
+const ATTRIBUTION_LINE =
+  /^\s*(?:co-authored-by:.*(?:claude|anthropic|codex|openai|cursor|copilot|gemini|grok|devin|opencode|noreply@).*|(?:🤖\s*)?generated (?:with|by) .*)$/i;
+
+/**
+ * Drops AI co-author trailers and "Generated with" footers. Commit bodies an
+ * agent wrote in a session carry them into the change request text.
+ */
+export function stripAttribution(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !ATTRIBUTION_LINE.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function parseCommitMessage(raw: string): CommitMessage | null {
   const rec = parseJsonObject(raw);
   if (!rec) return null;
@@ -96,7 +122,7 @@ export function parseCommitMessage(raw: string): CommitMessage | null {
       stringField(rec, "message"),
   );
   if (!subject) return null;
-  return { subject, body: commitBody(rec) };
+  return { subject, body: stripAttribution(commitBody(rec)) };
 }
 
 function commitBody(rec: Record<string, unknown>): string {
@@ -119,7 +145,7 @@ export function parsePrContent(raw: string): PrContent | null {
   const rec = parseJsonObject(raw);
   if (!rec) return null;
   const title = sanitizePrTitle(stringField(rec, "title"));
-  const body = stringField(rec, "body").trim();
+  const body = stripAttribution(stringField(rec, "body"));
   if (!title) return null;
   return { title, body };
 }
