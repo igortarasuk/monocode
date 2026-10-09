@@ -1,0 +1,130 @@
+/*
+ * OLED theme: the dark theme on a black page whose pixels stay off. Text
+ * stays neutral and below full drive, links and accents are white, and every
+ * other color is mapped to pure red, green, red+green, or blue, so it lights
+ * as few subpixels as possible. The
+ * optional inks draw text in one of those colors too.
+ *
+ * Imported before the rest of index.css, so rules here must out-specify the
+ * ones they replace.
+ */
+
+/* Dark syntax colors, as variables the OLED theme can swap. */
+:root {
+  --syntax-keyword: #ff8ffd;
+  --syntax-callable: #a5d5fe;
+  --syntax-string: #b4fa72;
+  --syntax-type: #ff8272;
+  --syntax-number: #b4fa72;
+  --syntax-comment: #fefdc2;
+  --syntax-property: #d0d1fe;
+  --syntax-meta: #8e8e8e;
+  --syntax-invalid: #ffc4bd;
+}
+
+html.theme-oled {
+  --oled-red: rgb(215 0 0);
+  --oled-green: rgb(0 215 0);
+  --oled-yellow: rgb(215 215 0);
+  --oled-blue: rgb(0 0 255);
+  /* Accent, links and focus: white, a step above the text. Pure blue is too
+     dim to read on black and is the subpixel that wears fastest. */
+  --oled-highlight: rgb(245 245 245);
+
+  /* The tint sliders write these inline; the theme replaces them. */
+  --theme-saturation: 0% !important;
+  --background-lightness: 0%;
+  --content-lightness: 80%;
+  --sidebar-opacity: 1 !important;
+  --window-background-opacity: 1 !important;
+
+  --color-accent: var(--oled-highlight);
+  --link-color: var(--oled-highlight);
+  --color-skill: var(--oled-yellow);
+  --color-mention: var(--oled-highlight);
+  --color-markdown-heading: var(--oled-red);
+  --color-diff-add: var(--oled-green);
+  --color-diff-add-fg: var(--oled-green);
+  --color-diff-del: var(--oled-red);
+  --color-diff-del-fg: var(--oled-red);
+  --color-white: hsl(0 0% 88%);
+
+  --syntax-keyword: var(--oled-red);
+  --syntax-callable: var(--oled-yellow);
+  --syntax-string: var(--oled-green);
+  --syntax-type: var(--oled-red);
+  --syntax-number: var(--oled-yellow);
+  --syntax-comment: color-mix(in srgb, var(--color-content) 55%, black);
+  --syntax-property: var(--color-content);
+  --syntax-meta: color-mix(in srgb, var(--color-content) 55%, black);
+  --syntax-invalid: rgb(255 0 0);
+
+  /* Tailwind palette: each family becomes its nearest subpixel color. */
+  --color-red-50: rgb(255 0 0); --color-red-100: rgb(255 0 0); --color-red-200: rgb(247 0 0); --color-red-300: rgb(235 0 0); --color-red-400: rgb(219 0 0); --color-red-500: rgb(199 0 0); --color-red-600: rgb(168 0 0); --color-red-700: rgb(133 0 0); --color-red-800: rgb(97 0 0); --color-red-900: rgb(66 0 0); --color-red-950: rgb(41 0 0);
+  --color-rose-50: rgb(255 0 0); --color-rose-100: rgb(255 0 0); --color-rose-200: rgb(247 0 0); --color-rose-300: rgb(235 0 0); --color-rose-400: rgb(219 0 0); --color-rose-500: rgb(199 0 0); --color-rose-600: rgb(168 0 0); --color-rose-700: rgb(133 0 0); --color-rose-800: rgb(97 0 0); --color-rose-900: rgb(66 0 0); --color-rose-950: rgb(41 0 0);
+  --color-pink-50: rgb(255 0 0); --color-pink-100: rgb(255 0 0); --color-pink-200: rgb(247 0 0); --color-pink-300: rgb(235 0 0); --color-pink-400: rgb(219 0 0); --color-pink-500: rgb(199 0 0); --color-pink-600: rgb(168 0 0); --color-pink-700: rgb(133 0 0); --color-pink-800: rgb(97 0 0); --color-pink-900: rgb(66 0 0); --color-pink-950: rgb(41 0 0);
+  --color-fuchsia-50: rgb(255 0 0); --color-fuchsia-100: rgb(255 0 0); --color-fuchsia-200: rgb(247 0 0); --color-fuchsia-300: rgb(235 0 0); --color-fuchsia-400: rgb(219 0 0); --color-fuchsia-500: rgb(199 0 0); --color-fuchsia-600: rgb(168 0 0); --color-fuchsia-700: rgb(133 0 0); --color-fuchsia-800: rgb(97 0 0); --color-fuchsia-900: rgb(66 0 0); --color-fuchsia-950: rgb(41 0 0);
+  --color-orange-50: rgb(255 0 0); --color-orange-100: rgb(255 0 0); --color-orange-200: rgb(247 0 0); --color-orange-300: rgb(235 0 0); --color-orange-400: rgb(219 0 0); --color-orange-500: rgb(199 0 0); --color-orange-600: rgb(168 0 0); --color-orange-700: rgb(133 0 0); --color-orange-800: rgb(97 0 0); --color-orange-900: rgb(66 0 0); --color-orange-950: rgb(41 0 0);
+  --color-green-50: rgb(0 255 0); --color-green-100: rgb(0 255 0); --color-green-200: rgb(0 247 0); --color-green-300: rgb(0 235 0); --color-green-400: rgb(0 219 0); --color-green-500: rgb(0 199 0); --color-green-600: rgb(0 168 0); --color-green-700: rgb(0 133 0); --color-green-800: rgb(0 97 0); --color-green-900: rgb(0 66 0); --color-green-950: rgb(0 41 0);
+  --color-emerald-50: rgb(0 255 0); --color-emerald-100: rgb(0 255 0); --color-emerald-200: rgb(0 247 0); --color-emerald-300: rgb(0 235 0); --color-emerald-400: rgb(0 219 0); --color-emerald-500: rgb(0 199 0); --color-emerald-600: rgb(0 168 0); --color-emerald-700: rgb(0 133 0); --color-emerald-800: rgb(0 97 0); --color-emerald-900: rgb(0 66 0); --color-emerald-950: rgb(0 41 0);
+  --color-lime-50: rgb(0 255 0); --color-lime-100: rgb(0 255 0); --color-lime-200: rgb(0 247 0); --color-lime-300: rgb(0 235 0); --color-lime-400: rgb(0 219 0); --color-lime-500: rgb(0 199 0); --color-lime-600: rgb(0 168 0); --color-lime-700: rgb(0 133 0); --color-lime-800: rgb(0 97 0); --color-lime-900: rgb(0 66 0); --color-lime-950: rgb(0 41 0);
+  --color-teal-50: rgb(0 255 0); --color-teal-100: rgb(0 255 0); --color-teal-200: rgb(0 247 0); --color-teal-300: rgb(0 235 0); --color-teal-400: rgb(0 219 0); --color-teal-500: rgb(0 199 0); --color-teal-600: rgb(0 168 0); --color-teal-700: rgb(0 133 0); --color-teal-800: rgb(0 97 0); --color-teal-900: rgb(0 66 0); --color-teal-950: rgb(0 41 0);
+  --color-yellow-50: rgb(255 255 0); --color-yellow-100: rgb(255 255 0); --color-yellow-200: rgb(247 247 0); --color-yellow-300: rgb(235 235 0); --color-yellow-400: rgb(219 219 0); --color-yellow-500: rgb(199 199 0); --color-yellow-600: rgb(168 168 0); --color-yellow-700: rgb(133 133 0); --color-yellow-800: rgb(97 97 0); --color-yellow-900: rgb(66 66 0); --color-yellow-950: rgb(41 41 0);
+  --color-amber-50: rgb(255 255 0); --color-amber-100: rgb(255 255 0); --color-amber-200: rgb(247 247 0); --color-amber-300: rgb(235 235 0); --color-amber-400: rgb(219 219 0); --color-amber-500: rgb(199 199 0); --color-amber-600: rgb(168 168 0); --color-amber-700: rgb(133 133 0); --color-amber-800: rgb(97 97 0); --color-amber-900: rgb(66 66 0); --color-amber-950: rgb(41 41 0);
+  --color-sky-50: rgb(245 245 245); --color-sky-100: rgb(245 245 245); --color-sky-200: rgb(238 238 238); --color-sky-300: rgb(225 225 225); --color-sky-400: rgb(211 211 211); --color-sky-500: rgb(191 191 191); --color-sky-600: rgb(162 162 162); --color-sky-700: rgb(127 127 127); --color-sky-800: rgb(93 93 93); --color-sky-900: rgb(64 64 64); --color-sky-950: rgb(39 39 39);
+  --color-cyan-50: rgb(245 245 245); --color-cyan-100: rgb(245 245 245); --color-cyan-200: rgb(238 238 238); --color-cyan-300: rgb(225 225 225); --color-cyan-400: rgb(211 211 211); --color-cyan-500: rgb(191 191 191); --color-cyan-600: rgb(162 162 162); --color-cyan-700: rgb(127 127 127); --color-cyan-800: rgb(93 93 93); --color-cyan-900: rgb(64 64 64); --color-cyan-950: rgb(39 39 39);
+  --color-blue-50: rgb(0 0 255); --color-blue-100: rgb(0 0 255); --color-blue-200: rgb(0 0 247); --color-blue-300: rgb(0 0 235); --color-blue-400: rgb(0 0 219); --color-blue-500: rgb(0 0 199); --color-blue-600: rgb(0 0 168); --color-blue-700: rgb(0 0 140); --color-blue-800: rgb(0 0 140); --color-blue-900: rgb(0 0 140); --color-blue-950: rgb(0 0 140);
+  --color-indigo-50: rgb(0 0 255); --color-indigo-100: rgb(0 0 255); --color-indigo-200: rgb(0 0 247); --color-indigo-300: rgb(0 0 235); --color-indigo-400: rgb(0 0 219); --color-indigo-500: rgb(0 0 199); --color-indigo-600: rgb(0 0 168); --color-indigo-700: rgb(0 0 140); --color-indigo-800: rgb(0 0 140); --color-indigo-900: rgb(0 0 140); --color-indigo-950: rgb(0 0 140);
+  --color-violet-50: rgb(0 0 255); --color-violet-100: rgb(0 0 255); --color-violet-200: rgb(0 0 247); --color-violet-300: rgb(0 0 235); --color-violet-400: rgb(0 0 219); --color-violet-500: rgb(0 0 199); --color-violet-600: rgb(0 0 168); --color-violet-700: rgb(0 0 140); --color-violet-800: rgb(0 0 140); --color-violet-900: rgb(0 0 140); --color-violet-950: rgb(0 0 140);
+  --color-purple-50: rgb(0 0 255); --color-purple-100: rgb(0 0 255); --color-purple-200: rgb(0 0 247); --color-purple-300: rgb(0 0 235); --color-purple-400: rgb(0 0 219); --color-purple-500: rgb(0 0 199); --color-purple-600: rgb(0 0 168); --color-purple-700: rgb(0 0 140); --color-purple-800: rgb(0 0 140); --color-purple-900: rgb(0 0 140); --color-purple-950: rgb(0 0 140);
+  --color-slate-50: color-mix(in srgb, var(--color-content) 100%, black); --color-slate-100: color-mix(in srgb, var(--color-content) 100%, black); --color-slate-200: color-mix(in srgb, var(--color-content) 97%, black); --color-slate-300: color-mix(in srgb, var(--color-content) 92%, black); --color-slate-400: color-mix(in srgb, var(--color-content) 86%, black); --color-slate-500: color-mix(in srgb, var(--color-content) 78%, black); --color-slate-600: color-mix(in srgb, var(--color-content) 66%, black); --color-slate-700: color-mix(in srgb, var(--color-content) 52%, black); --color-slate-800: color-mix(in srgb, var(--color-content) 38%, black); --color-slate-900: color-mix(in srgb, var(--color-content) 26%, black); --color-slate-950: color-mix(in srgb, var(--color-content) 16%, black);
+  --color-gray-50: color-mix(in srgb, var(--color-content) 100%, black); --color-gray-100: color-mix(in srgb, var(--color-content) 100%, black); --color-gray-200: color-mix(in srgb, var(--color-content) 97%, black); --color-gray-300: color-mix(in srgb, var(--color-content) 92%, black); --color-gray-400: color-mix(in srgb, var(--color-content) 86%, black); --color-gray-500: color-mix(in srgb, var(--color-content) 78%, black); --color-gray-600: color-mix(in srgb, var(--color-content) 66%, black); --color-gray-700: color-mix(in srgb, var(--color-content) 52%, black); --color-gray-800: color-mix(in srgb, var(--color-content) 38%, black); --color-gray-900: color-mix(in srgb, var(--color-content) 26%, black); --color-gray-950: color-mix(in srgb, var(--color-content) 16%, black);
+  --color-zinc-50: color-mix(in srgb, var(--color-content) 100%, black); --color-zinc-100: color-mix(in srgb, var(--color-content) 100%, black); --color-zinc-200: color-mix(in srgb, var(--color-content) 97%, black); --color-zinc-300: color-mix(in srgb, var(--color-content) 92%, black); --color-zinc-400: color-mix(in srgb, var(--color-content) 86%, black); --color-zinc-500: color-mix(in srgb, var(--color-content) 78%, black); --color-zinc-600: color-mix(in srgb, var(--color-content) 66%, black); --color-zinc-700: color-mix(in srgb, var(--color-content) 52%, black); --color-zinc-800: color-mix(in srgb, var(--color-content) 38%, black); --color-zinc-900: color-mix(in srgb, var(--color-content) 26%, black); --color-zinc-950: color-mix(in srgb, var(--color-content) 16%, black);
+  --color-neutral-50: color-mix(in srgb, var(--color-content) 100%, black); --color-neutral-100: color-mix(in srgb, var(--color-content) 100%, black); --color-neutral-200: color-mix(in srgb, var(--color-content) 97%, black); --color-neutral-300: color-mix(in srgb, var(--color-content) 92%, black); --color-neutral-400: color-mix(in srgb, var(--color-content) 86%, black); --color-neutral-500: color-mix(in srgb, var(--color-content) 78%, black); --color-neutral-600: color-mix(in srgb, var(--color-content) 66%, black); --color-neutral-700: color-mix(in srgb, var(--color-content) 52%, black); --color-neutral-800: color-mix(in srgb, var(--color-content) 38%, black); --color-neutral-900: color-mix(in srgb, var(--color-content) 26%, black); --color-neutral-950: color-mix(in srgb, var(--color-content) 16%, black);
+  --color-stone-50: color-mix(in srgb, var(--color-content) 100%, black); --color-stone-100: color-mix(in srgb, var(--color-content) 100%, black); --color-stone-200: color-mix(in srgb, var(--color-content) 97%, black); --color-stone-300: color-mix(in srgb, var(--color-content) 92%, black); --color-stone-400: color-mix(in srgb, var(--color-content) 86%, black); --color-stone-500: color-mix(in srgb, var(--color-content) 78%, black); --color-stone-600: color-mix(in srgb, var(--color-content) 66%, black); --color-stone-700: color-mix(in srgb, var(--color-content) 52%, black); --color-stone-800: color-mix(in srgb, var(--color-content) 38%, black); --color-stone-900: color-mix(in srgb, var(--color-content) 26%, black); --color-stone-950: color-mix(in srgb, var(--color-content) 16%, black);
+}
+
+/* Colored inks. Below 50% a pure hue lights only its own subpixels. */
+html.theme-oled:is(.oled-ink-green, .oled-ink-amber, .oled-ink-red) {
+  --theme-saturation: 100% !important;
+  --content-lightness: 42%;
+  --color-white: hsl(var(--theme-hue) 100% 50%);
+  /* A second color, never the ink itself. */
+  --oled-highlight: var(--oled-yellow);
+}
+
+html.theme-oled.oled-ink-green {
+  --theme-hue: 120 !important;
+}
+
+html.theme-oled.oled-ink-amber {
+  --theme-hue: 60 !important;
+  --oled-highlight: var(--oled-green);
+}
+
+html.theme-oled.oled-ink-red {
+  --theme-hue: 0 !important;
+}
+
+/* Nothing behind the page may show through or glow. */
+html.theme-oled,
+html.theme-oled body,
+html.theme-oled #root {
+  background: #000;
+}
+
+html.theme-oled .sidebar-glass,
+html.theme-oled .body-glass {
+  background: #000 !important;
+  backdrop-filter: none !important;
+}
+
+html.theme-oled .chat-pane-background::before {
+  display: none !important;
+}
+
+/* Highlighted chat code keeps to the ink; its theme colors mix subpixels. */
+html.theme-oled .markdown-code-token {
+  color: inherit !important;
+  background-color: transparent !important;
+}

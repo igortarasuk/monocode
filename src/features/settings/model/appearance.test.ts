@@ -35,6 +35,7 @@ import {
   applyDiffPalette,
   loadDiffPalette,
   saveDiffPalette,
+  applyOledInk,
 } from "./appearance";
 
 const KEY = "monocode.transcriptLayout";
@@ -301,6 +302,16 @@ describe("theme preference setting", () => {
       expect(localStorage.getItem(SCHEME_KEY)).toBe(value);
       expect(loadThemePreference()).toBe(value);
     }
+  });
+
+  it("treats OLED as the dark scheme and names its ink on the page", () => {
+    saveThemePreference("oled");
+    expect(loadThemePreference()).toBe("oled");
+    expect(resolveColorScheme("oled")).toBe("dark");
+    const root = document.documentElement;
+    applyOledInk("amber");
+    expect(root.classList.contains("oled-ink-amber")).toBe(true);
+    expect(root.classList.contains("oled-ink-white")).toBe(false);
   });
 
   it("ignores unknown stored values", () => {

@@ -18,6 +18,7 @@ const PROJECT_RAIL_OPEN_KEY = "monocode.projectRailOpen";
 const SESSION_SIDEBAR_OPEN_KEY = "monocode.sessionSidebarOpen";
 const BODY_KEY = "monocode.bodyGlass";
 const SCHEME_KEY = "monocode.colorScheme";
+const OLED_INK_KEY = "monocode.oledInk";
 const SIDEBAR_TAB_ORDER_KEY = "monocode.sidebarTabOrder";
 const PROJECT_RAIL_WIDTH_KEY = "monocode.projectRailWidth";
 const TRANSCRIPT_LAYOUT_KEY = "monocode.transcriptLayout";
@@ -41,7 +42,19 @@ export const CHAT_BACKGROUND_PATH_CHANGE_EVENT =
   "monocode:chat-background-path-change";
 
 export type ColorScheme = "dark" | "light";
-export type ThemePreference = ColorScheme | "system";
+/** "oled" is the dark scheme on a black page, drawn in single-subpixel colors. */
+export type ThemePreference = ColorScheme | "system" | "oled";
+/** What OLED text and chrome are drawn in: neutral, or one subpixel color. */
+export type OledInk = "green" | "amber" | "red" | "white";
+
+export const OLED_INKS: readonly OledInk[] = ["white", "green", "amber", "red"];
+export const OLED_INK_DEFAULT: OledInk = "white";
+export const OLED_INK_LABELS: Record<OledInk, string> = {
+  green: "Green",
+  amber: "Amber",
+  red: "Red",
+  white: "Neutral",
+};
 export type TranscriptLayout = "full" | "chat";
 export type ChatBackgroundScope = "empty" | "all";
 export type NewThreadBackgroundEffect =
@@ -310,6 +323,7 @@ export function initAppearance() {
   applyAccentColor(loadAccentColor());
   applyThemeTint(loadThemeHue(), loadThemeSaturation());
   applyThemeDarkLightness(loadThemeDarkLightness());
+  applyOledInk(loadOledInk());
   applyThemePreference(loadThemePreference());
   watchSystemColorScheme();
   applySidebarOpacity(loadSidebarOpacity());
@@ -324,7 +338,46 @@ export function initAppearance() {
 }
 
 function isThemePreference(value: unknown): value is ThemePreference {
-  return value === "dark" || value === "light" || value === "system";
+  return (
+    value === "dark" ||
+    value === "light" ||
+    value === "system" ||
+    value === "oled"
+  );
+}
+
+export function loadOledInk(): OledInk {
+  try {
+    const raw = localStorage.getItem(OLED_INK_KEY);
+    return OLED_INKS.find((ink) => ink === raw) ?? OLED_INK_DEFAULT;
+  } catch {
+    return OLED_INK_DEFAULT;
+  }
+}
+
+export function saveOledInk(value: OledInk) {
+  try {
+    localStorage.setItem(OLED_INK_KEY, value);
+  } catch {
+    // private mode / quota
+  }
+}
+
+/** Picks the ink the OLED theme draws in; other themes ignore it. */
+export function applyOledInk(value: OledInk) {
+  const root = document.documentElement;
+  for (const ink of OLED_INKS) {
+    root.classList.toggle(`oled-ink-${ink}`, ink === value);
+  }
+  if (isOledTheme()) {
+    window.dispatchEvent(
+      new CustomEvent<ColorScheme>(SCHEME_CHANGE_EVENT, { detail: "dark" }),
+    );
+  }
+}
+
+export function isOledTheme(): boolean {
+  return document.documentElement.classList.contains("theme-oled");
 }
 
 export function loadThemePreference(): ThemePreference {
@@ -354,6 +407,7 @@ function systemColorScheme(): ColorScheme {
 }
 
 export function resolveColorScheme(value: ThemePreference): ColorScheme {
+  if (value === "oled") return "dark";
   return value === "system" ? systemColorScheme() : value;
 }
 
@@ -364,6 +418,7 @@ export function isLightScheme(): boolean {
 export function applyThemePreference(value: ThemePreference): ColorScheme {
   const next = resolveColorScheme(value);
   document.documentElement.classList.toggle("theme-light", next === "light");
+  document.documentElement.classList.toggle("theme-oled", value === "oled");
   if (nativeGlassReady) syncNativeGlass(next);
   window.dispatchEvent(
     new CustomEvent<ColorScheme>(SCHEME_CHANGE_EVENT, { detail: next }),
@@ -426,7 +481,9 @@ function glassFadeMs(): number {
  * overtaken is dropped rather than left to settle last.
  */
 export function syncNativeGlass(scheme: ColorScheme) {
-  const enabled = scheme === "dark" && (!IS_LINUX || loadBodyGlass());
+  // Glass lets the desktop light pixels the OLED theme keeps off.
+  const enabled =
+    scheme === "dark" && !isOledTheme() && (!IS_LINUX || loadBodyGlass());
   const root = document.documentElement;
   const generation = ++glassSyncGeneration;
   const setWindow = () =>

@@ -75,17 +75,18 @@ type HighlightPalette = {
 };
 
 const HIGHLIGHT_PALETTE: Record<ColorScheme, HighlightPalette> = {
+  // Variables, so the OLED theme can swap them (styles/oled.css).
   dark: {
-    keyword: "#ff8ffd",
+    keyword: "var(--syntax-keyword)",
     heading: "var(--color-markdown-heading)",
-    callable: "#a5d5fe",
-    string: "#b4fa72",
-    type: "#ff8272",
-    number: "#b4fa72",
-    comment: "#fefdc2",
-    property: "#d0d1fe",
-    meta: "#8e8e8e",
-    invalid: "#ffc4bd",
+    callable: "var(--syntax-callable)",
+    string: "var(--syntax-string)",
+    type: "var(--syntax-type)",
+    number: "var(--syntax-number)",
+    comment: "var(--syntax-comment)",
+    property: "var(--syntax-property)",
+    meta: "var(--syntax-meta)",
+    invalid: "var(--syntax-invalid)",
   },
   light: {
     keyword: "#a626a4",

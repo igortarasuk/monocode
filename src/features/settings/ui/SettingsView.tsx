@@ -61,6 +61,7 @@ import {
   applySidebarBlur,
   applySidebarOpacity,
   applyThemeDarkLightness,
+  applyOledInk,
   applyThemePreference,
   applyThemeTint,
   BODY_GLASS_DEFAULT,
@@ -81,6 +82,7 @@ import {
   loadDiffPalette,
   loadNewThreadBackgroundEffect,
   loadThemeDarkLightness,
+  loadOledInk,
   loadThemePreference,
   loadSidebarBlur,
   loadSidebarOpacity,
@@ -97,6 +99,9 @@ import {
   saveDiffPalette,
   setNewThreadBackgroundEffect,
   saveThemeDarkLightness,
+  OLED_INKS,
+  OLED_INK_LABELS,
+  saveOledInk,
   saveThemePreference,
   saveSidebarBlur,
   saveSidebarOpacity,
@@ -125,6 +130,7 @@ import {
   THEME_SATURATION_DEFAULT,
   THEME_SATURATION_MAX,
   THEME_SATURATION_MIN,
+  type OledInk,
   type ThemePreference,
   type ChatBackgroundScope,
   DIFF_PALETTE_DEFAULT,
@@ -2142,7 +2148,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
         <Row
           id="theme"
           label="Theme"
-          description="System follows the OS appearance."
+          description="System follows the OS appearance. OLED keeps the page black and maps colors to pure subpixel colors."
         >
           <Segmented
             label="Theme"
@@ -2151,10 +2157,12 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
               { value: "system", label: "System" },
               { value: "dark", label: "Dark" },
               { value: "light", label: "Light" },
+              { value: "oled", label: "OLED" },
             ]}
             onChange={appearance.onThemePreference}
           />
         </Row>
+        {appearance.themePreference === "oled" ? <OledInkRow /> : null}
         <Row
           id="accent-color"
           label="Accent color"
@@ -4443,6 +4451,32 @@ function Row({
         {children}
       </div>
     </div>
+  );
+}
+
+/** The one color the OLED theme draws text and chrome in. */
+function OledInkRow() {
+  const [ink, setInk] = useState<OledInk>(loadOledInk);
+  return (
+    <Row
+      id="oled-ink"
+      label="OLED ink"
+      description="Neutral keeps text gray. Green, amber and red draw it with one or two subpixels and leave blue, the fastest to wear, off."
+    >
+      <Segmented
+        label="OLED ink"
+        value={ink}
+        options={OLED_INKS.map((value) => ({
+          value,
+          label: OLED_INK_LABELS[value],
+        }))}
+        onChange={(next) => {
+          applyOledInk(next);
+          saveOledInk(next);
+          setInk(next);
+        }}
+      />
+    </Row>
   );
 }
 

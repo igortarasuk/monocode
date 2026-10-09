@@ -23,7 +23,9 @@ import {
   scanOscCwd,
   type TerminalMetaPatch,
 } from "../model/terminalTab";
-import { isLightScheme, SCHEME_CHANGE_EVENT } from "../../settings/model/appearance";
+import { isLightScheme, SCHEME_CHANGE_EVENT,
+  isOledTheme,
+} from "../../settings/model/appearance";
 import {
   applyTerminalChrome,
   fitTerminal,
@@ -84,6 +86,27 @@ const ANSI_DARK = {
   brightWhite: "#f8fafc",
 };
 
+// One lit subpixel per color where the name allows it; magenta and cyan fall
+// back to dimmer red and green instead of adding blue.
+const ANSI_OLED = {
+  black: "#000000",
+  red: "#d70000",
+  green: "#00d700",
+  yellow: "#d7d700",
+  blue: "#0000ff",
+  magenta: "#a00000",
+  cyan: "#00a000",
+  white: "#cccccc",
+  brightBlack: "#555555",
+  brightRed: "#ff0000",
+  brightGreen: "#00ff00",
+  brightYellow: "#ffff00",
+  brightBlue: "#0000ff",
+  brightMagenta: "#c80000",
+  brightCyan: "#00c800",
+  brightWhite: "#e0e0e0",
+};
+
 // One-Light-family palette tuned for a near-white canvas.
 const ANSI_LIGHT = {
   black: "#383a42",
@@ -105,6 +128,24 @@ const ANSI_LIGHT = {
 };
 
 function terminalTheme(light: boolean) {
+  if (isOledTheme()) {
+    const ink = cssColor("var(--color-content)", ANSI_OLED.green);
+    return {
+      background: "#00000000",
+      foreground: ink,
+      cursor: ink,
+      cursorAccent: "#000000",
+      selectionBackground: cssColor(
+        "color-mix(in srgb, var(--color-content) 30%, transparent)",
+        "rgba(0,215,0,0.3)",
+      ),
+      selectionInactiveBackground: cssColor(
+        "color-mix(in srgb, var(--color-content) 15%, transparent)",
+        "rgba(0,215,0,0.15)",
+      ),
+      ...ANSI_OLED,
+    };
+  }
   return {
     background: "#00000000",
     foreground: cssColor("var(--color-content)", light ? "#2e2e2e" : "#e8eef2"),
