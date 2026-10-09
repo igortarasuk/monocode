@@ -298,7 +298,6 @@ fn spawn_unix(
     close_fd(slave);
     let pid = child.id();
 
-    set_cloexec(master);
     let reader = unsafe { File::from_raw_fd(dup_fd(master)?) };
     let writer = unsafe { File::from_raw_fd(dup_fd(master)?) };
 
@@ -580,6 +579,10 @@ fn open_pty(cols: u16, rows: u16) -> Result<(i32, i32), String> {
     if master < 0 {
         return Err(os_err("Failed to open terminal"));
     }
+    // Every descriptor here is close-on-exec. A shell that inherits a master,
+    // its own or an earlier terminal's, keeps that PTY open after we die, so
+    // the kernel never hangs it up and the shell outlives a SIGTERM'd app.
+    set_cloexec(master);
     if unsafe { libc::grantpt(master) } != 0 || unsafe { libc::unlockpt(master) } != 0 {
         close_fd(master);
         return Err(os_err("Failed to unlock terminal"));
@@ -592,6 +595,7 @@ fn open_pty(cols: u16, rows: u16) -> Result<(i32, i32), String> {
         close_fd(master);
         return Err(os_err("Failed to open terminal slave"));
     }
+    set_cloexec(slave);
     if let Err(err) = resize_fd(master, cols, rows) {
         close_fd(master);
         close_fd(slave);
@@ -640,7 +644,7 @@ fn resize_fd(fd: i32, cols: u16, rows: u16) -> Result<(), String> {
 
 #[cfg(unix)]
 fn dup_fd(fd: i32) -> Result<i32, String> {
-    let next = unsafe { libc::dup(fd) };
+    let next = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
     if next < 0 {
         return Err(os_err("Failed to duplicate terminal"));
     }
@@ -825,6 +829,19 @@ mod tests {
         assert!(!pty_should_flush(1, Duration::from_millis(1)));
         assert!(pty_should_flush(READ_CHUNK, Duration::from_millis(1)));
         assert!(pty_should_flush(1, PTY_COALESCE));
+    }
+
+    #[test]
+    fn pty_descriptors_are_close_on_exec() {
+        let cloexec =
+            |fd: i32| unsafe { libc::fcntl(fd, libc::F_GETFD) } & libc::FD_CLOEXEC != 0;
+        let (master, slave) = open_pty(80, 24).unwrap();
+        let copy = dup_fd(master).unwrap();
+        let all = cloexec(master) && cloexec(slave) && cloexec(copy);
+        for fd in [master, slave, copy] {
+            close_fd(fd);
+        }
+        assert!(all);
     }
 
     #[test]
