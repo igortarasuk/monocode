@@ -4461,7 +4461,7 @@ function OledInkRow() {
     <Row
       id="oled-ink"
       label="OLED ink"
-      description="Neutral keeps text gray. Green, amber and red draw it with one or two subpixels and leave blue, the fastest to wear, off."
+      description="Neutral keeps text gray. Green, amber and red draw it with one or two subpixels and leave blue off."
     >
       <Segmented
         label="OLED ink"

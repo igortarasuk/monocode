@@ -28,7 +28,7 @@ html.theme-oled {
   --oled-yellow: rgb(215 215 0);
   --oled-blue: rgb(0 0 255);
   /* Accent, links and focus: white, a step above the text. Pure blue is too
-     dim to read on black and is the subpixel that wears fastest. */
+     dim to read on black. */
   --oled-highlight: rgb(245 245 245);
 
   /* The tint sliders write these inline; the theme replaces them. */
