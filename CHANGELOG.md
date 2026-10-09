@@ -13,7 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The issue panel closes an issue the way `linear.sh close` does: In Progress first, a required closure comment, then Done. Picking a completed status opens the same form. **Take in work** on an issue without a deadline sets one three days out, and the panel has a due date field and a label picker.
 - Done issues sit on the day they were closed instead of their due date, so a Friday deadline closed on Monday no longer inflates Friday. A card moved this way shows its due date, in red when it was closed late, and the day's planned hours follow the card.
 - **Plan week** requires a label on every item: items under a parent inherit its labels, items without a parent take the team's default labels, remembered per team, and each item has its own label picker. The sync and consultation presets carry the defaults, so they are never created unlabeled.
-- Project knowledge → **Diagram** draws the infrastructure map: services sit above the host their `runs on` names, kinds pick the colour, and node positions survive regeneration. The drawing is kept as `.monochrome/architecture.json`, an Archify architecture candidate, and is regenerated on every sync.
+- Project knowledge → **Diagram** shows the interactive page an agent renders with the Archify skill (`.monochrome/architecture.html`), full-window, with **Reload**, **Open in browser** and **Update diagram**. Until a page is delivered it shows a sketch of the infrastructure map and **Draw diagram**, which puts the request into the composer.
+- Settings → Theme → **OLED**: the dark theme on a pure black page with glass and transparency off. Text stays neutral below full brightness, links and accents are white, and every other color, including the terminal palette and editor syntax colors, is mapped to pure red, green, red+green or blue. **OLED ink** can draw text in green, amber or red instead.
+- The latest reply shows **Yes** and **No** buttons when it ends with a question; one click sends the answer.
+- Untagged code blocks made only of `! command` lines get the **Run in terminal** button.
+
+### Changed
+
+- Generated commit messages and merge request descriptions follow the project's own instructions first, stay short (no forced Summary/Testing template) and never carry AI co-author or "Generated with" lines; such lines are also removed from the commit list used as a fallback description.
+- Finished Linear and Jira issues show a green check in Inbox instead of the red closed mark, which is kept for canceled ones.
+- Package installs (deb, rpm) still check GitHub releases for a new version.
+
 ## [0.11.0] - 2026-10-09
 
 ### Added
