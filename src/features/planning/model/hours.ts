@@ -111,18 +111,25 @@ export function summarizeHours(
   hoursById: ReadonlyMap<string, IssueHours>,
   spentByDay: Record<string, number>,
 ): HoursSummary {
-  const leaves = [...plan.days.flatMap((day) => day.issues), ...plan.unscheduled];
+  // Keyed by the day the calendar shows the issue on, not its due date.
+  const placed: [LinearSprintIssue, string | null][] = [
+    ...plan.days.flatMap((day) =>
+      day.issues.map((issue): [LinearSprintIssue, string] => [issue, day.date]),
+    ),
+    ...plan.unscheduled.map((issue): [LinearSprintIssue, string | null] => [
+      issue,
+      issue.dueDate,
+    ]),
+  ];
   let planned = 0;
   let spent = 0;
   const plannedByDay: Record<string, number> = {};
-  for (const issue of leaves) {
+  for (const [issue, day] of placed) {
     const hours = hoursById.get(issue.id);
     const planHours = plannedFor(issue, hours).hours ?? 0;
     planned += planHours;
     spent += hours?.spent ?? 0;
-    if (issue.dueDate) {
-      plannedByDay[issue.dueDate] = (plannedByDay[issue.dueDate] ?? 0) + planHours;
-    }
+    if (day) plannedByDay[day] = (plannedByDay[day] ?? 0) + planHours;
   }
   return {
     planned,

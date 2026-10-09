@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Calendar cards and the issue panel show what a Linear hygiene report would score against: no due date, no label, no estimate, no description, overdue, due today, no comment or change for a week, and a parent due before its subtasks. The sprint header counts the issues to fix.
 - The issue panel closes an issue the way `linear.sh close` does: In Progress first, a required closure comment, then Done. Picking a completed status opens the same form. **Take in work** on an issue without a deadline sets one three days out, and the panel has a due date field and a label picker.
+- Done issues sit on the day they were closed instead of their due date, so a Friday deadline closed on Monday no longer inflates Friday. A card moved this way shows its due date, in red when it was closed late, and the day's planned hours follow the card.
 - **Plan week** requires a label on every item: items under a parent inherit its labels, items without a parent take the team's default labels, remembered per team, and each item has its own label picker. The sync and consultation presets carry the defaults, so they are never created unlabeled.
 - Project knowledge → **Diagram** draws the infrastructure map: services sit above the host their `runs on` names, kinds pick the colour, and node positions survive regeneration. The drawing is kept as `.monochrome/architecture.json`, an Archify architecture candidate, and is regenerated on every sync.
 

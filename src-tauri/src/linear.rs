@@ -121,6 +121,8 @@ pub struct LinearSprintIssue {
     pub state_type: String,
     pub estimate: Option<f64>,
     pub due_date: Option<String>,
+    /// When Linear marked it completed; the calendar places done work there.
+    pub completed_at: Option<String>,
     pub planned_hours: Option<i64>,
     pub parent_identifier: String,
     pub child_count: usize,
@@ -401,7 +403,7 @@ query SprintIssues($cycleId: ID!, $first: Int!) {
     state: { type: { nin: ["canceled", "duplicate"] } }
   }) {
     nodes {
-      id identifier number title url updatedAt dueDate estimate description
+      id identifier number title url updatedAt dueDate completedAt estimate description
       state { name type }
       team { id key name }
       project { id name }
@@ -1406,6 +1408,7 @@ fn parse_sprint_issue(node: &Value) -> Option<LinearSprintIssue> {
             .unwrap_or_default(),
         estimate: node.get("estimate").and_then(Value::as_f64),
         due_date: string_field(node, "dueDate").filter(|due| !due.is_empty()),
+        completed_at: string_field(node, "completedAt").filter(|at| !at.is_empty()),
         planned_hours: planned_hours(&description),
         parent_identifier: node
             .get("parent")
@@ -1753,6 +1756,15 @@ mod tests {
             Some("2026-10-01T09:30:00.000Z")
         );
         assert!(parent.last_comment_at.is_none());
+        assert!(leaf.completed_at.is_none());
+        let done = issues
+            .iter()
+            .find(|issue| issue.state_type == "completed")
+            .unwrap();
+        assert_eq!(
+            done.completed_at.as_deref(),
+            Some("2026-09-30T15:12:00.000Z")
+        );
         assert!(issues.iter().any(|issue| issue.state_type == "completed"));
         assert!(issues
             .iter()

@@ -4,6 +4,7 @@ import {
   buildSprintPlan,
   doneState,
   isOverdue,
+  placementDate,
   sprintWeekdays,
   startedState,
   type LinearSprint,
@@ -40,6 +41,7 @@ function issue(patch: Partial<LinearSprintIssue>): LinearSprintIssue {
     stateType: "unstarted",
     estimate: 1,
     dueDate: "2026-09-28",
+    completedAt: null,
     plannedHours: null,
     parentIdentifier: "",
     childCount: 0,
@@ -101,6 +103,32 @@ describe("buildSprintPlan", () => {
 
   it("lists leaves without a weekday due date separately", () => {
     expect(plan.unscheduled.map((i) => i.identifier)).toEqual(["ENG-5"]);
+  });
+
+  it("places done work on the day it was closed, not its due date", () => {
+    const closedLater = issue({
+      identifier: "ENG-6",
+      estimate: 3,
+      dueDate: "2026-09-28",
+      stateType: "completed",
+      // 23:30 Kyiv on Wednesday, which is already Thursday in UTC.
+      completedAt: "2026-09-30T20:30:00.000Z",
+    });
+    const closedOutside = issue({
+      identifier: "ENG-7",
+      estimate: 1,
+      dueDate: "2026-10-02",
+      stateType: "completed",
+      completedAt: "2026-10-05T07:00:00.000Z",
+    });
+    const moved = buildSprintPlan({ cycle, issues: [closedLater, closedOutside] }, kyiv);
+    const wednesday = moved.days.find((day) => day.date === "2026-09-30")!;
+    expect(wednesday.issues.map((i) => i.identifier)).toEqual(["ENG-6"]);
+    expect(wednesday.hours).toBe(3);
+    expect(moved.days.find((day) => day.date === "2026-09-28")!.issues).toEqual([]);
+    expect(moved.unscheduled.map((i) => i.identifier)).toEqual(["ENG-7"]);
+    expect(placementDate(closedLater, kyiv)).toBe("2026-09-30");
+    expect(placementDate({ ...closedLater, stateType: "started" }, kyiv)).toBe("2026-09-28");
   });
 });
 

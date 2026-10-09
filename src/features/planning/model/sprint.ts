@@ -17,6 +17,7 @@ export type LinearSprintIssue = {
   stateType: string;
   estimate: number | null;
   dueDate: string | null;
+  completedAt: string | null;
   plannedHours: number | null;
   parentIdentifier: string;
   childCount: number;
@@ -183,6 +184,21 @@ export function isOverdue(issue: LinearSprintIssue, today: string): boolean {
   return !isDone(issue) && !!issue.dueDate && issue.dueDate < today;
 }
 
+/**
+ * The day a leaf belongs to on the calendar: done work sits on the day it
+ * was closed, so a Friday deadline closed on Monday shows under Monday.
+ */
+export function placementDate(
+  issue: LinearSprintIssue,
+  toLocal: (iso: string) => Date = (iso) => new Date(iso),
+): string | null {
+  if (isDone(issue) && issue.completedAt) {
+    const closed = toLocal(issue.completedAt);
+    if (!Number.isNaN(closed.getTime())) return localDateKey(closed);
+  }
+  return issue.dueDate;
+}
+
 /** Parents are shown apart and never counted, like `linear.sh week`. */
 export function buildSprintPlan(
   sprint: LinearSprint,
@@ -210,7 +226,8 @@ export function buildSprintPlan(
     const hours = issueHours(issue);
     totalHours += hours;
     if (isDone(issue)) doneHours += hours;
-    const day = issue.dueDate ? byDate.get(issue.dueDate) : undefined;
+    const placed = placementDate(issue, toLocal);
+    const day = placed ? byDate.get(placed) : undefined;
     if (day) {
       day.issues.push(issue);
       day.hours += hours;

@@ -279,6 +279,7 @@ function SprintIssueCard({
   selected,
   hours,
   problems = [],
+  placedOn,
   onOpen,
 }: {
   issue: LinearSprintIssue;
@@ -286,10 +287,14 @@ function SprintIssueCard({
   selected: boolean;
   hours?: IssueHours;
   problems?: readonly HygieneProblem[];
+  /** Calendar day the card sits on; done work moves to its closing day. */
+  placedOn?: string;
   onOpen: (issue: LinearSprintIssue) => void;
 }) {
   const done = isDone(issue);
   const overdue = isOverdue(issue, today);
+  const movedFromDue = done && !!issue.dueDate && !!placedOn && placedOn !== issue.dueDate;
+  const closedLate = movedFromDue && placedOn! > issue.dueDate!;
   return (
     <div
       role="button"
@@ -322,6 +327,16 @@ function SprintIssueCard({
         {issue.parentIdentifier ? (
           <span className="font-mono text-[10px] text-content/40">
             ⊂ {issue.parentIdentifier}
+          </span>
+        ) : null}
+        {movedFromDue ? (
+          <span
+            title={closedLate ? "Closed after the due date" : "Closed before the due date"}
+            className={`rounded px-1.5 py-px text-[10px] ${
+              closedLate ? "bg-red-500/15 text-red-400" : "text-content/40"
+            }`}
+          >
+            due {shortDate(issue.dueDate!)}
           </span>
         ) : null}
       </span>
@@ -577,6 +592,7 @@ export function SprintCalendar({
                         selected={issue.id === selectedId}
                         hours={hoursById?.get(issue.id)}
                         problems={hygiene?.byIssue.get(issue.id)}
+                        placedOn={day.date}
                         onOpen={onOpenIssue}
                       />
                     ))}
@@ -593,7 +609,7 @@ export function SprintCalendar({
             {plan.unscheduled.length > 0 ? (
               <section className="flex flex-col gap-2">
                 <header className="text-[11px] font-medium uppercase tracking-wide text-content/40">
-                  Outside the week or without a due date
+                  Outside the week, without a due date, or closed outside it
                 </header>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
                   {plan.unscheduled.map((issue) => (

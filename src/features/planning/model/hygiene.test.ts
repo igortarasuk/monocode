@@ -15,6 +15,7 @@ function issue(patch: Partial<LinearSprintIssue>): LinearSprintIssue {
     stateType: "unstarted",
     estimate: 1,
     dueDate: "2026-10-12",
+    completedAt: null,
     plannedHours: null,
     parentIdentifier: "",
     childCount: 0,

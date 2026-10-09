@@ -17,10 +17,14 @@ function issue(patch: Partial<LinearSprintIssue>): LinearSprintIssue {
     stateType: "unstarted",
     estimate: 1,
     dueDate: "2026-09-29",
+    completedAt: null,
     plannedHours: null,
     parentIdentifier: "",
     childCount: 0,
     projectName: "",
+    hasDescription: true,
+    labelIds: [],
+    lastCommentAt: null,
     issue: {} as LinearSprintIssue["issue"],
     ...patch,
   };
@@ -77,5 +81,17 @@ describe("summarizeHours", () => {
     expect(summary.spent).toBe(4.5);
     expect(summary.delta).toBe(-1.5);
     expect(summary.plannedByDay).toEqual({ "2026-09-29": 4 });
+  });
+
+  it("counts a leaf on the day the calendar placed it", () => {
+    const moved = issue({ id: "m", estimate: 2, dueDate: "2026-09-28" });
+    const plan: SprintPlan = {
+      days: [{ date: "2026-09-30", issues: [moved], hours: 2 }],
+      unscheduled: [],
+      parents: [],
+      totalHours: 2,
+      doneHours: 2,
+    };
+    expect(summarizeHours(plan, new Map(), {}).plannedByDay).toEqual({ "2026-09-30": 2 });
   });
 });
