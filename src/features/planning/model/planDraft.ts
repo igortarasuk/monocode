@@ -8,6 +8,8 @@ export type PlanDraftItem = {
   description: string;
   estimate: number;
   dueDate: string;
+  /** Own labels; empty means inherit the parent's, which must then have some. */
+  labelIds: string[];
 };
 
 export type PlanParent = {
@@ -42,7 +44,10 @@ export function newDraftKey(): string {
   return `d${Date.now().toString(36)}${keySeq}`;
 }
 
-export function emptyDraftItem(dueDate: string): PlanDraftItem {
+export function emptyDraftItem(
+  dueDate: string,
+  labelIds: string[] = [],
+): PlanDraftItem {
   return {
     key: newDraftKey(),
     parentIdentifier: "",
@@ -50,6 +55,7 @@ export function emptyDraftItem(dueDate: string): PlanDraftItem {
     description: "",
     estimate: 1,
     dueDate,
+    labelIds: [...labelIds],
   };
 }
 
@@ -57,6 +63,10 @@ type RawItem = Record<string, unknown>;
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function ids(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(text).filter(Boolean) : [];
 }
 
 /** Reads the plan-apply JSON: `{ week, items: [{ parent, title, desc, estimate, due }] }`. */
@@ -73,29 +83,49 @@ export function parsePlanJson(raw: string): PlanDraftItem[] {
     description: text(entry.desc ?? entry.description),
     estimate: Number(entry.estimate) || 0,
     dueDate: text(entry.due ?? entry.dueDate),
+    labelIds: ids(entry.labels ?? entry.labelIds),
   }));
 }
 
 /** Team syncs Mon/Wed/Fri at 1 h each, the Linear minimum. */
-export function syncItems(weekdays: string[]): PlanDraftItem[] {
+export function syncItems(
+  weekdays: string[],
+  labelIds: string[] = [],
+): PlanDraftItem[] {
   return [0, 2, 4]
     .map((index) => weekdays[index])
     .filter(Boolean)
     .map((day) => ({
-      ...emptyDraftItem(day),
+      ...emptyDraftItem(day, labelIds),
       title: `Team sync, ${day}`,
       description: "Team sync meeting (~40 min, logged as the 1 h Linear minimum).",
     }));
 }
 
-export function consultationItem(weekdays: string[], hours = 2): PlanDraftItem {
+export function consultationItem(
+  weekdays: string[],
+  hours = 2,
+  labelIds: string[] = [],
+): PlanDraftItem {
   const day = weekdays[2] ?? weekdays[0] ?? "";
   return {
-    ...emptyDraftItem(day),
+    ...emptyDraftItem(day, labelIds),
     title: `Team consultations in chat and calls, week of ${weekdays[0] ?? day}`,
     description: "Questions from other teams outside tickets: chat and short calls across the week.",
     estimate: hours,
   };
+}
+
+/** Items without a parent and without labels take the team's default labels. */
+export function withDefaultLabels(
+  items: readonly PlanDraftItem[],
+  labelIds: readonly string[],
+): PlanDraftItem[] {
+  return items.map((item) =>
+    item.labelIds.length === 0 && !item.parentIdentifier.trim() && labelIds.length
+      ? { ...item, labelIds: [...labelIds] }
+      : item,
+  );
 }
 
 export function checkDraft(
@@ -125,6 +155,10 @@ export function checkDraft(
     const parentKey = item.parentIdentifier.trim();
     const parent = parentKey ? parents.get(parentKey) : undefined;
     if (parentKey && !parent) problems.push(`Parent ${parentKey} not found`);
+    // Hygiene reports score unlabeled issues; inherit or pick one.
+    if (item.labelIds.length === 0 && (!parent || parent.labelIds.length === 0)) {
+      problems.push(parent ? "Parent has no labels; pick one" : "Label is required");
+    }
     const title = item.title.trim();
     const dupKey = `${parentKey}\u0000${title}`;
     if (title && (parent?.childTitles.includes(title) || seen.has(dupKey))) {
@@ -160,13 +194,35 @@ export function targetGap(total: number): number {
 }
 
 const DRAFT_KEY = "monocode.planDraft.";
+const LABELS_KEY = "monocode.planLabels.";
 
 export function loadDraft(cycleId: string): PlanDraftItem[] {
   try {
     const raw = localStorage.getItem(DRAFT_KEY + cycleId);
-    return raw ? (JSON.parse(raw) as PlanDraftItem[]) : [];
+    const items = raw ? (JSON.parse(raw) as PlanDraftItem[]) : [];
+    // Drafts saved before labels existed have no labelIds.
+    return items.map((item) => ({ ...item, labelIds: ids(item.labelIds) }));
   } catch {
     return [];
+  }
+}
+
+/** Labels last used on parentless items, per team; presets reuse them. */
+export function loadDefaultLabels(teamId: string): string[] {
+  try {
+    const raw = localStorage.getItem(LABELS_KEY + teamId);
+    return raw ? ids(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDefaultLabels(teamId: string, labelIds: readonly string[]) {
+  try {
+    if (labelIds.length) localStorage.setItem(LABELS_KEY + teamId, JSON.stringify(labelIds));
+    else localStorage.removeItem(LABELS_KEY + teamId);
+  } catch {
+    // Storage can be unavailable; the defaults then last for the session.
   }
 }
 
@@ -199,6 +255,7 @@ export function createPlan(
       description: item.description.trim(),
       estimate: item.estimate,
       dueDate: item.dueDate,
+      labelIds: item.labelIds,
     })),
   });
 }

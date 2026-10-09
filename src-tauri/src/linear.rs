@@ -125,8 +125,21 @@ pub struct LinearSprintIssue {
     pub parent_identifier: String,
     pub child_count: usize,
     pub project_name: String,
+    pub has_description: bool,
+    pub label_ids: Vec<String>,
+    /// Newest comment on the issue, if any; part of the "no update" check.
+    pub last_comment_at: Option<String>,
     /// Inbox shape of the same issue, for the shared detail panel.
     pub issue: LinearIssue,
+}
+
+/// A label the plan panel can put on a new issue; group labels are left out.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearLabelOption {
+    pub id: String,
+    pub name: String,
+    pub color: String,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -167,6 +180,8 @@ pub struct PlanItemInput {
     pub description: String,
     pub estimate: i64,
     pub due_date: String,
+    #[serde(default)]
+    pub label_ids: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -390,10 +405,11 @@ query SprintIssues($cycleId: ID!, $first: Int!) {
       state { name type }
       team { id key name }
       project { id name }
-      labels { nodes { name color } }
+      labels { nodes { id name color } }
       assignee { name displayName avatarUrl }
       parent { identifier }
       children { nodes { id } }
+      comments(first: 1, orderBy: createdAt) { nodes { createdAt } }
     }
   }
 }
@@ -590,6 +606,16 @@ fn plan_issue_input(
     if parent.is_some_and(|parent| parent.child_titles.iter().any(|t| t == title)) {
         return Ok(None);
     }
+    let labels: Vec<&str> = item
+        .label_ids
+        .iter()
+        .map(|id| id.trim())
+        .filter(|id| valid_linear_id(id))
+        .collect();
+    // Hygiene reports score unlabeled issues; inherit from the parent or require one.
+    if labels.is_empty() && !parent.is_some_and(|parent| !parent.label_ids.is_empty()) {
+        return Err("At least one label is required".into());
+    }
     let mut input = json!({
         "teamId": team_id.trim(),
         "cycleId": cycle_id.trim(),
@@ -605,9 +631,13 @@ fn plan_issue_input(
         if let Some(project) = &parent.project_id {
             input["projectId"] = json!(project);
         }
-        if !parent.label_ids.is_empty() {
-            input["labelIds"] = json!(parent.label_ids);
-        }
+    }
+    if labels.is_empty() {
+        input["labelIds"] = json!(parent
+            .map(|parent| parent.label_ids.clone())
+            .unwrap_or_default());
+    } else {
+        input["labelIds"] = json!(labels);
     }
     Ok(Some(input))
 }
@@ -700,6 +730,169 @@ pub async fn linear_issue_set_state(
             &token,
             ISSUE_SET_STATE_MUTATION,
             json!({ "id": id, "stateId": state_id }),
+        )?;
+        parse_issue_set_state(&data)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+const TEAM_LABELS_QUERY: &str = r#"
+query TeamLabels($first: Int!) {
+  issueLabels(first: $first) {
+    nodes { id name color isGroup team { id } }
+  }
+}
+"#;
+const ISSUE_SET_DUE_DATE_MUTATION: &str = r#"
+mutation IssueSetDueDate($id: String!, $dueDate: TimelessDate) {
+  issueUpdate(id: $id, input: { dueDate: $dueDate }) {
+    success
+    issue { dueDate }
+  }
+}
+"#;
+const ISSUE_SET_LABELS_MUTATION: &str = r#"
+mutation IssueSetLabels($id: String!, $labelIds: [String!]!) {
+  issueUpdate(id: $id, input: { labelIds: $labelIds }) {
+    success
+    issue { labels { nodes { id } } }
+  }
+}
+"#;
+const TEAM_LABELS_LIMIT: u32 = 250;
+
+/// Replaces the issue's labels; resolves to the ids Linear stored.
+#[tauri::command]
+pub async fn linear_issue_set_labels(
+    app: AppHandle,
+    id: String,
+    label_ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        let id = id.trim();
+        if !valid_linear_id(id) {
+            return Err("Missing Linear issue".into());
+        }
+        let labels: Vec<&str> = label_ids
+            .iter()
+            .map(|label| label.trim())
+            .filter(|label| valid_linear_id(label))
+            .collect();
+        if labels.is_empty() {
+            return Err("Keep at least one label".into());
+        }
+        let data = graphql_with_token(
+            &token,
+            ISSUE_SET_LABELS_MUTATION,
+            json!({ "id": id, "labelIds": labels }),
+        )?;
+        parse_issue_set_labels(&data)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Labels a new issue of this team may carry: the team's own and workspace ones.
+#[tauri::command]
+pub async fn linear_team_labels(
+    app: AppHandle,
+    team_id: String,
+) -> Result<Vec<LinearLabelOption>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        let team_id = team_id.trim().to_string();
+        if !valid_linear_id(&team_id) {
+            return Err("Missing Linear team".into());
+        }
+        let data = graphql_with_token(
+            &token,
+            TEAM_LABELS_QUERY,
+            json!({ "first": TEAM_LABELS_LIMIT }),
+        )?;
+        parse_team_labels(&data, &team_id)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Sets or clears the due date; `due_date` is `YYYY-MM-DD` or empty.
+#[tauri::command]
+pub async fn linear_issue_set_due_date(
+    app: AppHandle,
+    id: String,
+    due_date: String,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        let id = id.trim();
+        if !valid_linear_id(id) {
+            return Err("Missing Linear issue".into());
+        }
+        let due = due_date.trim();
+        if !due.is_empty() && !valid_due_date(due) {
+            return Err("Due date must be YYYY-MM-DD".into());
+        }
+        let value = if due.is_empty() {
+            Value::Null
+        } else {
+            json!(due)
+        };
+        let data = graphql_with_token(
+            &token,
+            ISSUE_SET_DUE_DATE_MUTATION,
+            json!({ "id": id, "dueDate": value }),
+        )?;
+        parse_issue_set_due_date(&data)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Closes like `linear.sh close`: In Progress first, a closure comment, then Done.
+/// `via_started` is false when the issue is already in a started state.
+#[tauri::command]
+pub async fn linear_issue_close(
+    app: AppHandle,
+    id: String,
+    comment: String,
+    started_state_id: String,
+    done_state_id: String,
+    via_started: bool,
+) -> Result<LinearState, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = require_token(&app)?;
+        let id = id.trim();
+        let (started, done) = (started_state_id.trim(), done_state_id.trim());
+        if !valid_linear_id(id) || !valid_linear_id(done) {
+            return Err("Missing Linear issue or Done state".into());
+        }
+        let comment = comment.trim();
+        if comment.is_empty() {
+            return Err("A closure comment is required".into());
+        }
+        if via_started {
+            if !valid_linear_id(started) {
+                return Err("This team has no In Progress state".into());
+            }
+            let data = graphql_with_token(
+                &token,
+                ISSUE_SET_STATE_MUTATION,
+                json!({ "id": id, "stateId": started }),
+            )?;
+            parse_issue_set_state(&data)?;
+        }
+        let data = graphql_with_token(
+            &token,
+            COMMENT_CREATE_MUTATION,
+            json!({ "input": { "issueId": id, "body": comment } }),
+        )?;
+        parse_linear_comment_create(&data)?;
+        let data = graphql_with_token(
+            &token,
+            ISSUE_SET_STATE_MUTATION,
+            json!({ "id": id, "stateId": done }),
         )?;
         parse_issue_set_state(&data)
     })
@@ -1142,6 +1335,59 @@ fn parse_issue_set_state(data: &Value) -> Result<LinearState, String> {
         .ok_or_else(|| "Linear did not return the new state".into())
 }
 
+fn parse_issue_set_labels(data: &Value) -> Result<Vec<String>, String> {
+    let update = data
+        .get("issueUpdate")
+        .filter(|update| update.get("success").and_then(Value::as_bool) == Some(true))
+        .ok_or_else(|| "Linear did not update the labels".to_string())?;
+    Ok(update
+        .pointer("/issue/labels/nodes")
+        .and_then(Value::as_array)
+        .map(|nodes| nodes.iter().filter_map(|n| string_field(n, "id")).collect())
+        .unwrap_or_default())
+}
+
+fn parse_issue_set_due_date(data: &Value) -> Result<Option<String>, String> {
+    let update = data
+        .get("issueUpdate")
+        .filter(|update| update.get("success").and_then(Value::as_bool) == Some(true))
+        .ok_or_else(|| "Linear did not update the due date".to_string())?;
+    Ok(update
+        .pointer("/issue/dueDate")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|due| !due.is_empty()))
+}
+
+/// Team labels plus workspace labels, by name; group labels cannot be applied.
+fn parse_team_labels(data: &Value, team_id: &str) -> Result<Vec<LinearLabelOption>, String> {
+    let nodes = data
+        .pointer("/issueLabels/nodes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Linear did not return labels".to_string())?;
+    let mut labels: Vec<LinearLabelOption> = nodes
+        .iter()
+        .filter(|node| node.get("isGroup").and_then(Value::as_bool) != Some(true))
+        .filter(|node| {
+            node.get("team")
+                .and_then(|team| string_field(team, "id"))
+                .is_none_or(|id| id.is_empty() || id == team_id)
+        })
+        .filter_map(|node| {
+            Some(LinearLabelOption {
+                id: string_field(node, "id").filter(|id| !id.is_empty())?,
+                name: string_field(node, "name").filter(|name| !name.is_empty())?,
+                color: string_field(node, "color")
+                    .unwrap_or_default()
+                    .trim_start_matches('#')
+                    .to_string(),
+            })
+        })
+        .collect();
+    labels.sort_by_key(|label| label.name.to_lowercase());
+    Ok(labels)
+}
+
 fn parse_sprint_issue(node: &Value) -> Option<LinearSprintIssue> {
     let issue = parse_linear_issue(node)?;
     let id = issue.id.clone();
@@ -1173,6 +1419,16 @@ fn parse_sprint_issue(node: &Value) -> Option<LinearSprintIssue> {
             .get("project")
             .and_then(|value| string_field(value, "name"))
             .unwrap_or_default(),
+        has_description: !description.trim().is_empty(),
+        label_ids: node
+            .pointer("/labels/nodes")
+            .and_then(Value::as_array)
+            .map(|nodes| nodes.iter().filter_map(|n| string_field(n, "id")).collect())
+            .unwrap_or_default(),
+        last_comment_at: node
+            .pointer("/comments/nodes/0")
+            .and_then(|comment| string_field(comment, "createdAt"))
+            .filter(|at| !at.is_empty()),
         issue,
     })
 }
@@ -1336,7 +1592,64 @@ mod tests {
             description: "Result of the step.".into(),
             estimate,
             due_date: "2026-10-05".into(),
+            label_ids: Vec::new(),
         }
+    }
+
+    const TEAM_LABELS: &str = include_str!("testdata/linear_team_labels.json");
+
+    #[test]
+    fn team_labels_keep_own_and_workspace_labels_only() {
+        let data = parse_graphql_data(TEAM_LABELS).unwrap();
+        let labels = parse_team_labels(&data, "0b7f4d1f-9723-5ecc-9629-0692277f1e8b").unwrap();
+        let names: Vec<&str> = labels.iter().map(|label| label.name.as_str()).collect();
+        assert_eq!(names, vec!["Bug", "monitoring", "Operational"]);
+        assert_eq!(labels[0].color, "eb5757");
+    }
+
+    #[test]
+    fn plan_input_requires_a_label_without_parent() {
+        let bare = plan_item("Team sync", 1);
+        assert!(plan_issue_input(&bare, None, "t", "c", "s", "me").is_err());
+        let mut labeled = plan_item("Team sync", 1);
+        labeled.label_ids = vec!["l-ops".into()];
+        let input = plan_issue_input(&labeled, None, "t", "c", "s", "me")
+            .unwrap()
+            .unwrap();
+        assert_eq!(input["labelIds"], json!(["l-ops"]));
+        assert!(input.get("parentId").is_none());
+    }
+
+    #[test]
+    fn plan_input_own_labels_beat_the_parent() {
+        let parent = parse_plan_parent(&parse_graphql_data(PLAN_PARENT).unwrap()).unwrap();
+        let mut item = plan_item("New step", 2);
+        item.label_ids = vec!["l-own".into()];
+        let input = plan_issue_input(&item, Some(&parent), "t", "c", "s", "me")
+            .unwrap()
+            .unwrap();
+        assert_eq!(input["labelIds"], json!(["l-own"]));
+    }
+
+    #[test]
+    fn issue_set_labels_reads_stored_ids() {
+        let data = json!({ "issueUpdate": { "success": true, "issue": {
+            "labels": { "nodes": [{ "id": "l1" }, { "id": "l2" }] } } } });
+        assert_eq!(parse_issue_set_labels(&data).unwrap(), vec!["l1", "l2"]);
+        assert!(parse_issue_set_labels(&json!({ "issueUpdate": { "success": false } })).is_err());
+    }
+
+    #[test]
+    fn issue_set_due_date_reads_cleared_value() {
+        let set =
+            json!({ "issueUpdate": { "success": true, "issue": { "dueDate": "2026-10-12" } } });
+        assert_eq!(
+            parse_issue_set_due_date(&set).unwrap().as_deref(),
+            Some("2026-10-12")
+        );
+        let cleared = json!({ "issueUpdate": { "success": true, "issue": { "dueDate": null } } });
+        assert_eq!(parse_issue_set_due_date(&cleared).unwrap(), None);
+        assert!(parse_issue_set_due_date(&json!({ "issueUpdate": { "success": false } })).is_err());
     }
 
     #[test]
@@ -1433,6 +1746,13 @@ mod tests {
         assert_eq!(leaf.estimate, Some(2.0));
         assert_eq!(leaf.due_date.as_deref(), Some("2026-10-01"));
         assert_eq!(leaf.planned_hours, Some(2));
+        assert!(leaf.has_description);
+        assert_eq!(leaf.label_ids, vec!["l-monitoring"]);
+        assert_eq!(
+            leaf.last_comment_at.as_deref(),
+            Some("2026-10-01T09:30:00.000Z")
+        );
+        assert!(parent.last_comment_at.is_none());
         assert!(issues.iter().any(|issue| issue.state_type == "completed"));
         assert!(issues
             .iter()

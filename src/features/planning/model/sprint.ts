@@ -21,7 +21,16 @@ export type LinearSprintIssue = {
   parentIdentifier: string;
   childCount: number;
   projectName: string;
+  hasDescription: boolean;
+  labelIds: string[];
+  lastCommentAt: string | null;
   issue: LinearIssue;
+};
+
+export type LinearLabelOption = {
+  id: string;
+  name: string;
+  color: string;
 };
 
 export type LinearState = {
@@ -72,6 +81,54 @@ export function setIssueState(
   return invoke<LinearState>("linear_issue_set_state", { id, stateId });
 }
 
+export function loadTeamLabels(teamId: string): Promise<LinearLabelOption[]> {
+  return invoke<LinearLabelOption[]>("linear_team_labels", { teamId });
+}
+
+/** Replaces the labels; Linear needs at least one. */
+export function setIssueLabels(
+  id: string,
+  labelIds: readonly string[],
+): Promise<string[]> {
+  return invoke<string[]>("linear_issue_set_labels", { id, labelIds });
+}
+
+/** Empty `dueDate` clears the deadline; resolves to what Linear stored. */
+export function setIssueDueDate(
+  id: string,
+  dueDate: string,
+): Promise<string | null> {
+  return invoke<string | null>("linear_issue_set_due_date", { id, dueDate });
+}
+
+/** Closes through In Progress with a comment, like `linear.sh close`. */
+export function closeIssue(
+  issue: LinearSprintIssue,
+  comment: string,
+  states: LinearState[],
+): Promise<LinearState> {
+  const done = doneState(states);
+  if (!done) return Promise.reject(new Error("This team has no Done state"));
+  const started = startedState(states);
+  return invoke<LinearState>("linear_issue_close", {
+    id: issue.id,
+    comment,
+    startedStateId: started?.id ?? "",
+    doneStateId: done.id,
+    viaStarted: issue.stateType !== "started",
+  });
+}
+
+/** Teams add custom completed states, so prefer the one named Done. */
+export function doneState(states: LinearState[]): LinearState | null {
+  const completed = states.filter((state) => state.type === "completed");
+  return (
+    completed.find((state) => state.name.toLowerCase() === "done") ??
+    [...completed].sort((a, b) => a.position - b.position)[0] ??
+    null
+  );
+}
+
 /** Teams add custom started states, so prefer the one named In Progress. */
 export function startedState(states: LinearState[]): LinearState | null {
   const started = states.filter((state) => state.type === "started");
@@ -80,6 +137,12 @@ export function startedState(states: LinearState[]): LinearState | null {
     [...started].sort((a, b) => a.position - b.position)[0] ??
     null
   );
+}
+
+/** `YYYY-MM-DD` plus `days`, in local time; used for the 3-day start deadline. */
+export function addDays(dateKey: string, days: number): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return localDateKey(new Date(year, month - 1, day + days));
 }
 
 export function localDateKey(date: Date): string {

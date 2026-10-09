@@ -4,10 +4,12 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   Copy,
   LoaderCircle,
   RefreshCw,
 } from "../../../shared/ui/icons";
+import { sprintHygiene, type HygieneProblem } from "../model/hygiene";
 import {
   DAY_CAPACITY_HOURS,
   WEEK_TARGET_HOURS,
@@ -241,6 +243,29 @@ function IssueLabels({ issue }: { issue: LinearSprintIssue }) {
   );
 }
 
+/** Amber chips, one per thing a hygiene report would score against. */
+export function HygieneChips({ problems }: { problems: readonly HygieneProblem[] }) {
+  if (problems.length === 0) return null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1">
+      {problems.map((problem) => (
+        <span
+          key={problem.code}
+          title={problem.hint}
+          className={`inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium ${
+            problem.code === "overdue"
+              ? "bg-red-500/15 text-red-400"
+              : "bg-amber-500/15 text-amber-400"
+          }`}
+        >
+          <CircleAlert className="size-2.5" strokeWidth={2} />
+          {problem.label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function activate(event: KeyboardEvent<HTMLElement>, run: () => void) {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
@@ -253,12 +278,14 @@ function SprintIssueCard({
   today,
   selected,
   hours,
+  problems = [],
   onOpen,
 }: {
   issue: LinearSprintIssue;
   today: string;
   selected: boolean;
   hours?: IssueHours;
+  problems?: readonly HygieneProblem[];
   onOpen: (issue: LinearSprintIssue) => void;
 }) {
   const done = isDone(issue);
@@ -299,6 +326,7 @@ function SprintIssueCard({
         ) : null}
       </span>
       <IssueLabels issue={issue} />
+      <HygieneChips problems={problems} />
     </div>
   );
 }
@@ -346,6 +374,10 @@ export function SprintCalendar({
     [sprint],
   );
   const today = localDateKey(new Date());
+  const hygiene = useMemo(
+    () => (sprint ? sprintHygiene(sprint, today) : null),
+    [sprint, today],
+  );
   const cycle = sprint?.cycle ?? null;
   const totalTone = !plan
     ? ""
@@ -390,6 +422,15 @@ export function SprintCalendar({
           </span>
         ) : null}
         {summary && summary.spent > 0 ? <DeltaPill delta={summary.delta} /> : null}
+        {hygiene && hygiene.count > 0 ? (
+          <span
+            title="Issues a Linear hygiene report would score against"
+            className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-amber-400"
+          >
+            <CircleAlert className="size-3" strokeWidth={2} />
+            {hygiene.count} to fix
+          </span>
+        ) : null}
         <span className="ml-auto flex items-center gap-px">
           <button
             type="button"
@@ -485,6 +526,7 @@ export function SprintCalendar({
                       <span className="truncate text-[12px] font-medium text-content">
                         {parent.title}
                       </span>
+                      <HygieneChips problems={hygiene?.byIssue.get(parent.id) ?? []} />
                     </div>
                   ))}
                 </div>
@@ -534,6 +576,7 @@ export function SprintCalendar({
                         today={today}
                         selected={issue.id === selectedId}
                         hours={hoursById?.get(issue.id)}
+                        problems={hygiene?.byIssue.get(issue.id)}
                         onOpen={onOpenIssue}
                       />
                     ))}
@@ -560,6 +603,7 @@ export function SprintCalendar({
                       today={today}
                       selected={issue.id === selectedId}
                       hours={hoursById?.get(issue.id)}
+                      problems={hygiene?.byIssue.get(issue.id)}
                       onOpen={onOpenIssue}
                     />
                   ))}

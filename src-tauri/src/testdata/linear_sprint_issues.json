@@ -53,6 +53,9 @@
                 "id": "e3c2d58f-ab62-5948-89fd-863c6acdb591"
               }
             ]
+          },
+          "comments": {
+            "nodes": []
           }
         },
         {
@@ -82,7 +85,8 @@
             "nodes": [
               {
                 "name": "label-0",
-                "color": "#26b5ce"
+                "color": "#26b5ce",
+                "id": "l-monitoring"
               }
             ]
           },
@@ -96,6 +100,13 @@
           },
           "children": {
             "nodes": []
+          },
+          "comments": {
+            "nodes": [
+              {
+                "createdAt": "2026-10-01T09:30:00.000Z"
+              }
+            ]
           }
         },
         {

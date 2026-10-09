@@ -12,12 +12,15 @@ import {
   consultationItem,
   createPlan,
   emptyDraftItem,
+  loadDefaultLabels,
   loadDraft,
   loadPlanParents,
   parsePlanJson,
+  saveDefaultLabels,
   saveDraft,
   syncItems,
   targetGap,
+  withDefaultLabels,
   type PlanCreateResult,
   type PlanDraftItem,
   type PlanParent,
@@ -25,9 +28,12 @@ import {
 import {
   DAY_CAPACITY_HOURS,
   WEEK_TARGET_HOURS,
+  loadTeamLabels,
   type LinearCycle,
+  type LinearLabelOption,
   type LinearState,
 } from "../model/sprint";
+import { LabelPicker } from "./LabelPicker";
 
 type Props = {
   cycle: LinearCycle;
@@ -80,6 +86,10 @@ export function PlanWeekPanel({
 }: Props) {
   const [items, setItems] = useState<PlanDraftItem[]>(() => loadDraft(cycle.id));
   const [parents, setParents] = useState<Map<string, PlanParent>>(new Map());
+  const [labels, setLabels] = useState<LinearLabelOption[]>([]);
+  const [defaultLabels, setDefaultLabels] = useState<string[]>(() =>
+    loadDefaultLabels(teamId),
+  );
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +99,27 @@ export function PlanWeekPanel({
 
   // Mounted with key={cycle.id}, so the draft never crosses cycles.
   useEffect(() => saveDraft(cycle.id, items), [cycle.id, items]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadTeamLabels(teamId)
+      .then((next) => {
+        if (!cancelled) setLabels(next);
+      })
+      .catch(() => {
+        if (!cancelled) setLabels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [teamId]);
+
+  const chooseDefaultLabels = (next: string[]) => {
+    setDefaultLabels(next);
+    saveDefaultLabels(teamId, next);
+    setConfirming(false);
+    setItems((current) => withDefaultLabels(current, next));
+  };
 
   const parentKeys = useMemo(
     () =>
@@ -133,12 +164,12 @@ export function PlanWeekPanel({
   };
   const append = (next: PlanDraftItem[]) => {
     setConfirming(false);
-    setItems((current) => [...current, ...next]);
+    setItems((current) => [...current, ...withDefaultLabels(next, defaultLabels)]);
   };
 
   const applyImport = (replace: boolean) => {
     try {
-      const parsed = parsePlanJson(importText);
+      const parsed = withDefaultLabels(parsePlanJson(importText), defaultLabels);
       setItems((current) => (replace ? parsed : [...current, ...parsed]));
       setImportText("");
       setImportOpen(false);
@@ -212,10 +243,23 @@ export function PlanWeekPanel({
         ))}
       </div>
 
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-4 py-2 text-[11px] text-content/50">
+        <span title="Put on items that have no parent to inherit from">
+          Default labels
+        </span>
+        <LabelPicker
+          options={labels}
+          value={defaultLabels}
+          onChange={chooseDefaultLabels}
+          placeholder="none chosen"
+          ariaLabel="Default labels"
+        />
+      </div>
+
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2">
         <button
           type="button"
-          onClick={() => append([emptyDraftItem(weekdays[0] ?? "")])}
+          onClick={() => append([emptyDraftItem(weekdays[0] ?? "", defaultLabels)])}
           className={`${BUTTON} bg-content text-background-base hover:bg-content/80`}
         >
           <Plus className="size-3" strokeWidth={2} />
@@ -223,14 +267,14 @@ export function PlanWeekPanel({
         </button>
         <button
           type="button"
-          onClick={() => append(syncItems(weekdays))}
+          onClick={() => append(syncItems(weekdays, defaultLabels))}
           className={`${BUTTON} bg-content/8 text-content hover:bg-content/12`}
         >
           + Syncs Mon/Wed/Fri
         </button>
         <button
           type="button"
-          onClick={() => append([consultationItem(weekdays)])}
+          onClick={() => append([consultationItem(weekdays, 2, defaultLabels)])}
           className={`${BUTTON} bg-content/8 text-content hover:bg-content/12`}
         >
           <MessageSquare className="size-3" strokeWidth={1.75} />
@@ -383,6 +427,16 @@ export function PlanWeekPanel({
                     placeholder="What the result is"
                     rows={2}
                     className="rounded-md border border-content/10 bg-content/[0.03] px-2 py-1 text-[12px] text-content shadow-sm outline-none placeholder:text-content/35 focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                  <LabelPicker
+                    options={labels}
+                    value={item.labelIds}
+                    onChange={(labelIds) => update(item.key, { labelIds })}
+                    placeholder={
+                      parent && parent.labelIds.length
+                        ? `inherits ${parent.labelIds.length} from ${parent.identifier}`
+                        : "no label"
+                    }
                   />
                   {problems.length ? (
                     <p className="text-[11px] text-red-400">{problems.join(" · ")}</p>

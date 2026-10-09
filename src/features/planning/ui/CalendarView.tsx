@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { CalendarDays, LoaderCircle } from "../../../shared/ui/icons";
+import { CalendarDays, CircleAlert, LoaderCircle } from "../../../shared/ui/icons";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import type { RecentProject } from "../../projects/model/recents";
 import {
@@ -25,15 +25,26 @@ import {
   summarizeHours,
   type IssueHours,
 } from "../model/hours";
+import { sprintHygiene, type HygieneProblem } from "../model/hygiene";
 import {
+  addDays,
   buildSprintPlan,
+  closeIssue,
+  doneState,
+  isDone,
+  loadTeamLabels,
   loadTeamStates,
+  localDateKey,
+  setIssueDueDate,
+  setIssueLabels,
   setIssueState,
   startedState,
+  type LinearLabelOption,
   type LinearSprint,
   type LinearSprintIssue,
   type LinearState,
 } from "../model/sprint";
+import { LabelPicker } from "./LabelPicker";
 import { IssueKey, SprintCalendar, StatePill } from "./SprintCalendar";
 import { PlanWeekPanel } from "./PlanWeekPanel";
 import { TimePanel } from "./TimePanel";
@@ -50,75 +61,222 @@ type Props = {
   onOpenSession?: (sessionId: string) => void | Promise<void>;
 };
 
+const CLOSE_PLACEHOLDER =
+  "What was done, decisions made, what remains (if anything).";
+
 function StatusControls({
   issue,
   states,
+  labels,
+  problems,
   onChanged,
 }: {
   issue: LinearSprintIssue;
   states: LinearState[];
+  labels: LinearLabelOption[];
+  problems: readonly HygieneProblem[];
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [comment, setComment] = useState("");
   const current = states.find((state) => state.name === issue.state);
   const started = startedState(states);
+  const done = doneState(states);
+  const today = localDateKey(new Date());
 
-  const apply = async (stateId: string) => {
-    if (!stateId || stateId === current?.id) return;
+  const run = async (work: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     try {
-      await setIssueState(issue.id, stateId);
+      await work();
       onChanged();
+      return true;
     } catch (reason) {
       setError(String(reason));
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
+  const apply = async (stateId: string) => {
+    if (!stateId || stateId === current?.id) return;
+    // Closing needs a comment, so a completed state opens the form instead.
+    if (states.find((state) => state.id === stateId)?.type === "completed") {
+      setClosing(true);
+      return;
+    }
+    await run(() => setIssueState(issue.id, stateId));
+  };
+
+  // Like `linear.sh start`: taking work without a deadline sets today+3d.
+  const takeInWork = async () => {
+    if (!started) return;
+    await run(async () => {
+      await setIssueState(issue.id, started.id);
+      if (!issue.dueDate) await setIssueDueDate(issue.id, addDays(today, 3));
+    });
+  };
+
+  const confirmClose = async () => {
+    if (!comment.trim()) {
+      setError("A closure comment is required");
+      return;
+    }
+    if (await run(() => closeIssue(issue, comment.trim(), states))) {
+      setClosing(false);
+      setComment("");
+    }
+  };
+
+  const changeDue = async (value: string) => {
+    if ((value || null) === issue.dueDate) return;
+    await run(() => setIssueDueDate(issue.id, value));
+  };
+
+  const changeLabels = async (labelIds: string[]) => {
+    if (labelIds.length === 0) {
+      setError("Keep at least one label");
+      return;
+    }
+    await run(() => setIssueLabels(issue.id, labelIds));
+  };
+
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-4 py-2.5 text-[12px]">
-      <IssueKey identifier={issue.identifier} size="lg" />
-      <StatePill state={issue.state} stateType={issue.stateType} />
-      {issue.estimate != null ? (
-        <span className="rounded-full bg-accent/15 px-1.5 py-px text-[11px] font-semibold tabular-nums text-accent">
-          {issue.estimate}h
-        </span>
-      ) : null}
-      <span className="flex-1" />
-      <select
-        aria-label="Status"
-        value={current?.id ?? ""}
-        disabled={busy || states.length === 0}
-        onChange={(event) => void apply(event.target.value)}
-        className="h-7 rounded-md border border-content/10 bg-content/[0.03] px-2 text-content shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      >
-        {current ? null : <option value="">{issue.state}</option>}
-        {states.map((state) => (
-          <option key={state.id} value={state.id}>
-            {state.name}
-          </option>
-        ))}
-      </select>
-      {started && issue.stateType !== "started" && issue.childCount === 0 ? (
-        <button
-          type="button"
+    <div className="flex shrink-0 flex-col gap-2 border-b border-stroke px-4 py-2.5 text-[12px]">
+      <div className="flex flex-wrap items-center gap-2">
+        <IssueKey identifier={issue.identifier} size="lg" />
+        <StatePill state={issue.state} stateType={issue.stateType} />
+        {issue.estimate != null ? (
+          <span className="rounded-full bg-accent/15 px-1.5 py-px text-[11px] font-semibold tabular-nums text-accent">
+            {issue.estimate}h
+          </span>
+        ) : null}
+        <span className="flex-1" />
+        <input
+          type="date"
+          aria-label="Due date"
+          title="Due date"
+          value={issue.dueDate ?? ""}
           disabled={busy}
-          onClick={() => void apply(started.id)}
-          className="h-7 rounded-md bg-content px-3 font-medium text-background-base hover:bg-content/80 disabled:opacity-60"
+          onChange={(event) => void changeDue(event.target.value)}
+          className={`h-7 rounded-md border bg-content/[0.03] px-2 text-content shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+            issue.dueDate ? "border-content/10" : "border-amber-400/60"
+          }`}
+        />
+        <select
+          aria-label="Status"
+          value={current?.id ?? ""}
+          disabled={busy || states.length === 0}
+          onChange={(event) => void apply(event.target.value)}
+          className="h-7 rounded-md border border-content/10 bg-content/[0.03] px-2 text-content shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          Take in work
-        </button>
+          {current ? null : <option value="">{issue.state}</option>}
+          {states.map((state) => (
+            <option key={state.id} value={state.id}>
+              {state.name}
+            </option>
+          ))}
+        </select>
+        {started && issue.stateType !== "started" && issue.childCount === 0 ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void takeInWork()}
+            className="h-7 rounded-md bg-content px-3 font-medium text-background-base hover:bg-content/80 disabled:opacity-60"
+          >
+            Take in work
+          </button>
+        ) : null}
+        {done && !isDone(issue) && !closing ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setClosing(true)}
+            className="h-7 rounded-md bg-emerald-500/20 px-3 font-medium text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-60"
+          >
+            Close
+          </button>
+        ) : null}
+        {busy ? (
+          <LoaderCircle className="size-3.5 animate-spin text-content/45" strokeWidth={1.75} />
+        ) : null}
+      </div>
+      {labels.length ? (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-content/50">
+          <span>Labels</span>
+          <LabelPicker
+            options={labels}
+            value={issue.labelIds}
+            onChange={(labelIds) => void changeLabels(labelIds)}
+            ariaLabel="Issue labels"
+          />
+        </div>
       ) : null}
-      {busy ? (
-        <LoaderCircle className="size-3.5 animate-spin text-content/45" strokeWidth={1.75} />
+      {closing ? (
+        <div className="flex flex-col gap-1.5">
+          <textarea
+            aria-label="Closure comment"
+            value={comment}
+            autoFocus
+            onChange={(event) => setComment(event.target.value)}
+            placeholder={CLOSE_PLACEHOLDER}
+            rows={3}
+            className="rounded-md border border-content/10 bg-content/[0.03] px-2 py-1 text-[12px] text-content shadow-sm outline-none placeholder:text-content/35 focus-visible:ring-2 focus-visible:ring-accent"
+          />
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1 text-[11px] text-content/45">
+              {issue.stateType === "started"
+                ? "Posts the comment, then marks Done."
+                : "Moves to In Progress, posts the comment, then marks Done."}
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setClosing(false);
+                setError(null);
+              }}
+              className="h-7 rounded-md px-2 text-content/55 hover:bg-content/10 hover:text-content"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy || !comment.trim()}
+              onClick={() => void confirmClose()}
+              className="h-7 rounded-md bg-emerald-500/20 px-3 font-medium text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-50"
+            >
+              Close {issue.identifier}
+            </button>
+          </span>
+        </div>
       ) : null}
       {error ? (
         <span role="alert" className="text-red-400">
           {error}
         </span>
+      ) : null}
+      {problems.length ? (
+        <ul className="flex flex-col gap-0.5 text-[11px]">
+          {problems.map((problem) => (
+            <li key={problem.code} className="flex items-start gap-1.5">
+              <CircleAlert
+                className={`mt-0.5 size-3 shrink-0 ${
+                  problem.code === "overdue" ? "text-red-400" : "text-amber-400"
+                }`}
+                strokeWidth={2}
+              />
+              <span className="text-content/70">
+                <span className="font-medium text-content">{problem.label}</span>
+                {" — "}
+                {problem.hint}
+              </span>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );
@@ -143,6 +301,7 @@ export function CalendarView({
   const [connected, setConnected] = useState<boolean | null>(null);
   const [teams, setTeams] = useState<LinearTeam[]>([]);
   const [states, setStates] = useState<LinearState[]>([]);
+  const [labels, setLabels] = useState<LinearLabelOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sprint, setSprint] = useState<LinearSprint | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -154,6 +313,10 @@ export function CalendarView({
   const [hoursToken, setHoursToken] = useState(0);
   const [planning, setPlanning] = useState(false);
   const plan = useMemo(() => (sprint ? buildSprintPlan(sprint) : null), [sprint]);
+  const hygiene = useMemo(
+    () => (sprint ? sprintHygiene(sprint, localDateKey(new Date())) : null),
+    [sprint],
+  );
 
   useEffect(() => {
     if (!sprint || !plan) return;
@@ -229,6 +392,13 @@ export function CalendarView({
       })
       .catch(() => {
         if (!cancelled) setStates([]);
+      });
+    void loadTeamLabels(teamId)
+      .then((next) => {
+        if (!cancelled) setLabels(next);
+      })
+      .catch(() => {
+        if (!cancelled) setLabels([]);
       });
     return () => {
       cancelled = true;
@@ -321,8 +491,11 @@ export function CalendarView({
           ) : selected && item ? (
             <div className="flex min-h-0 w-[min(520px,45%)] shrink-0 flex-col">
               <StatusControls
+                key={selected.id}
                 issue={selected}
                 states={states}
+                labels={labels}
+                problems={hygiene?.byIssue.get(selected.id) ?? []}
                 onChanged={onChanged}
               />
               <TimePanel

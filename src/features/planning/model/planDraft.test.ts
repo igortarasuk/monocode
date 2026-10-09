@@ -4,6 +4,7 @@ import {
   consultationItem,
   parsePlanJson,
   syncItems,
+  withDefaultLabels,
   type PlanDraftItem,
   type PlanParent,
 } from "./planDraft";
@@ -28,6 +29,7 @@ function item(patch: Partial<PlanDraftItem>): PlanDraftItem {
     description: "Result.",
     estimate: 2,
     dueDate: week[0],
+    labelIds: ["l-ops"],
     ...patch,
   };
 }
@@ -59,6 +61,25 @@ describe("presets", () => {
   it("puts syncs on Monday, Wednesday and Friday", () => {
     expect(syncItems(week).map((i) => i.dueDate)).toEqual([week[0], week[2], week[4]]);
     expect(consultationItem(week).estimate).toBe(2);
+  });
+
+  it("carries the default labels so syncs are never unlabeled", () => {
+    expect(syncItems(week, ["l-ops"]).every((i) => i.labelIds[0] === "l-ops")).toBe(true);
+    expect(consultationItem(week, 2, ["l-ops"]).labelIds).toEqual(["l-ops"]);
+  });
+});
+
+describe("withDefaultLabels", () => {
+  it("fills parentless items only and leaves chosen labels alone", () => {
+    const filled = withDefaultLabels(
+      [
+        item({ key: "a", labelIds: [] }),
+        item({ key: "b", labelIds: [], parentIdentifier: "ENG-104" }),
+        item({ key: "c", labelIds: ["l-own"] }),
+      ],
+      ["l-ops"],
+    );
+    expect(filled.map((i) => i.labelIds)).toEqual([["l-ops"], [], ["l-own"]]);
   });
 });
 
@@ -106,6 +127,24 @@ describe("checkDraft", () => {
     );
     expect([...check.duplicates].sort()).toEqual(["x", "z"]);
     expect(check.total).toBe(2);
+  });
+
+  it("requires a label unless the parent has some", () => {
+    const check = checkDraft(
+      [
+        item({ key: "bare", labelIds: [] }),
+        item({ key: "child", labelIds: [], parentIdentifier: "ENG-104", title: "Fresh" }),
+        item({ key: "orphan", labelIds: [], parentIdentifier: "ENG-7", title: "Loose" }),
+      ],
+      week,
+      new Map([
+        ["ENG-104", parent],
+        ["ENG-7", { ...parent, identifier: "ENG-7", labelIds: [], childTitles: [] }],
+      ]),
+    );
+    expect(check.errors.get("bare")).toEqual(["Label is required"]);
+    expect(check.errors.has("child")).toBe(false);
+    expect(check.errors.get("orphan")).toEqual(["Parent has no labels; pick one"]);
   });
 
   it("flags a day over eight hours", () => {

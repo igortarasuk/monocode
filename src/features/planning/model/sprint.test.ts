@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  addDays,
   buildSprintPlan,
+  doneState,
   isOverdue,
   sprintWeekdays,
   startedState,
@@ -42,6 +44,9 @@ function issue(patch: Partial<LinearSprintIssue>): LinearSprintIssue {
     parentIdentifier: "",
     childCount: 0,
     projectName: "Platform",
+    hasDescription: true,
+    labelIds: [],
+    lastCommentAt: null,
     issue: {} as LinearSprintIssue["issue"],
     ...patch,
   };
@@ -126,5 +131,25 @@ describe("startedState", () => {
     expect(startedState(states)?.id).toBe("p");
     expect(startedState(states.filter((s) => s.id !== "p"))?.id).toBe("b");
     expect(startedState([states[2]])).toBeNull();
+  });
+});
+
+describe("doneState", () => {
+  it("prefers Done over other completed states", () => {
+    const states = [
+      { id: "r", name: "Released", type: "completed", position: 9 },
+      { id: "d", name: "Done", type: "completed", position: 8 },
+      { id: "t", name: "Todo", type: "unstarted", position: 1 },
+    ];
+    expect(doneState(states)?.id).toBe("d");
+    expect(doneState(states.filter((s) => s.id !== "d"))?.id).toBe("r");
+    expect(doneState([states[2]])).toBeNull();
+  });
+});
+
+describe("addDays", () => {
+  it("crosses month ends in local time", () => {
+    expect(addDays("2026-10-30", 3)).toBe("2026-11-02");
+    expect(addDays("2026-10-09", 0)).toBe("2026-10-09");
   });
 });
