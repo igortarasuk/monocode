@@ -29,13 +29,16 @@ git config rerere.autoupdate true
 # Keep our README when upstream edits it (.gitattributes).
 git config merge.ours.driver true
 
-# Our only change to the Tauri config is the product name, so a conflict
-# there is resolved by taking upstream's file and renaming it again.
+# Our changes to the Tauri config are the product name and the frame source
+# the project diagram loads from, so a conflict there is resolved by taking
+# upstream's file and applying both again.
 BRAND_FILE=src-tauri/tauri.conf.json
 BRAND_NAME=Monochrome
 rebrand() {
   sed -i -e "s/\"productName\": \"[^\"]*\"/\"productName\": \"$BRAND_NAME\"/" \
-    -e "s/\"title\": \"MonoCode\"/\"title\": \"$BRAND_NAME\"/" "$BRAND_FILE"
+    -e "s/\"title\": \"MonoCode\"/\"title\": \"$BRAND_NAME\"/" \
+    -e "s#frame-src 'none'#frame-src asset: http://asset.localhost https://asset.localhost#g" \
+    "$BRAND_FILE"
 }
 
 git fetch --quiet "$REMOTE"

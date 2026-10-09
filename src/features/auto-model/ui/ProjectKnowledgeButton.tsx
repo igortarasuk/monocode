@@ -7,6 +7,7 @@ import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { FolderTree, LoaderCircle, X } from "../../../shared/ui/icons";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { InfraDiagram } from "./InfraDiagram";
+import { ProjectDiagram } from "./ProjectDiagram";
 import { isArchitectureDiagram } from "../model/infraDiagram";
 import type { ProjectMeta } from "../model/autoModel";
 import { loadProjectMeta } from "../model/autoModelStore";
@@ -29,7 +30,7 @@ const TAB_HINT: Record<KnowledgeTab, string> = {
   infra:
     "Hosts, proxies and services. One “## name” section each, with kind, role, runs on, access, check and notes.",
   diagram:
-    "Drawn from the infrastructure map on every sync. Positions live in .monochrome/architecture.json, an Archify candidate you can finalize or move nodes in.",
+    "",
   changes:
     "Infrastructure, version and CI changes. One “- YYYY-MM-DD what changed” line each.",
 };
@@ -130,7 +131,12 @@ function ProjectKnowledgePage({
         role="dialog"
         aria-modal="true"
         aria-label="Project knowledge"
-        className="absolute top-1/2 left-1/2 isolate flex h-[min(760px,calc(100dvh-48px))] w-[min(980px,calc(100vw-48px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-content/7 shadow-2xl"
+        className={`absolute top-1/2 left-1/2 isolate flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-content/7 shadow-2xl ${
+          // The diagram is a whole viewer of its own; give it the window.
+          tab === "diagram"
+            ? "h-[calc(100dvh-48px)] w-[calc(100vw-48px)]"
+            : "h-[min(760px,calc(100dvh-48px))] w-[min(980px,calc(100vw-48px))]"
+        }`}
       >
         <GlassBackdrop className="bg-background-base/55" />
         <div className="relative z-[1] flex min-h-0 flex-1 flex-col text-[13px] text-content">
@@ -239,7 +245,13 @@ function ProjectKnowledgePage({
                 ) : tab === "infra" ? (
                   <Infra page={page} />
                 ) : tab === "diagram" ? (
-                  <Diagram page={page} />
+                  <ProjectDiagram
+                    diagram={page.diagram}
+                    fallback={<Diagram page={page} />}
+                    busy={busy}
+                    onReload={() => load(false)}
+                    onRequested={onClose}
+                  />
                 ) : tab === "changes" ? (
                   <Changes page={page} />
                 ) : text.trim() ? (

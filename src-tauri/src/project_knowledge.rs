@@ -26,6 +26,10 @@ const INFRA_DOC: &str = "infra.md";
 const CHANGES_DOC: &str = "changes.md";
 /// Generated from `infra.md`; an Archify architecture candidate.
 const ARCH_DOC: &str = "architecture.json";
+/// Archify's receipt for the specification it last delivered.
+const ARCH_RECEIPT: &str = "architecture.delivery.json";
+/// The interactive page Archify renders from the candidate.
+const ARCH_PAGE: &str = "architecture.html";
 const DOCS: [&str; 4] = [USER_DOC, MODEL_DOC, INFRA_DOC, CHANGES_DOC];
 const MAX_DOC_BYTES: u64 = 1 << 20;
 const MAX_ENTRY: usize = 600;
@@ -48,7 +52,7 @@ stored in Monochrome's database.
 | `infra.md` | agents | Infrastructure map: hosts, proxies, services, what each does, how to reach it, how to check its live state. |
 | `changes.md` | agents | Log of changes to infrastructure, versions, CI and deployment, newest last. |
 | `routing.md` | the owner, optional | Rules for the Auto model router; replaces the built-in ones. |
-| `architecture.json` | Monochrome | Diagram of `infra.md`, regenerated on every sync. Node positions are kept; the file is an Archify candidate. |
+| `architecture.json` | Monochrome | Diagram of `infra.md`, regenerated on every sync. Node positions are kept; the file is an Archify candidate, and is left alone once Archify finalizes it. |
 
 ## For agents
 
@@ -478,6 +482,36 @@ fn sublabel(role: &str, width: f64) -> String {
     }
 }
 
+/// The node a `runs on` value names: the whole value, or the longest known
+/// name leading it, as in "box-1 (compose service api)".
+fn named_host(value: &str, names: &[&str]) -> Option<usize> {
+    let value = value.to_lowercase();
+    names
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| {
+            let name = name.to_lowercase();
+            value.strip_prefix(&name).is_some_and(|rest| {
+                !name.is_empty()
+                    && !rest
+                        .starts_with(|c: char| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+            })
+        })
+        .max_by_key(|(_, name)| name.len())
+        .map(|(index, _)| index)
+}
+
+/// The name in a `runs on` value that matches no node, without the remark
+/// after it.
+fn host_name(value: &str) -> &str {
+    let end = [" (", ",", ";"]
+        .iter()
+        .filter_map(|mark| value.find(mark))
+        .min()
+        .unwrap_or(value.len());
+    value[..end].trim()
+}
+
 fn overlaps(a: (f64, f64, f64), b: (f64, f64, f64)) -> bool {
     (a.1 - b.1).abs() < 1.0 && a.0 < b.0 + b.2 + 40.0 && b.0 < a.0 + a.2 + 40.0
 }
@@ -529,19 +563,26 @@ fn architecture(title: &str, nodes: &[InfraNode], previous: Option<&Value>) -> V
             implicit: false,
         });
     }
-    let index_of = |items: &[Item], name: &str| {
-        items
-            .iter()
-            .position(|item| item.label.eq_ignore_ascii_case(name))
+    let index_of = |items: &[Item], value: &str| {
+        let names: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+        named_host(value, &names)
     };
     for i in 0..nodes.len() {
-        let target = nodes[i].runs_on.trim();
-        if target.is_empty() || target.eq_ignore_ascii_case(&nodes[i].name) {
+        let value = nodes[i].runs_on.trim();
+        if value.is_empty() {
             continue;
         }
-        let host = match index_of(&items, target) {
+        let host = match index_of(&items, value) {
+            Some(host) if host == i => continue,
             Some(host) => host,
+            // A host's unmatched `runs on` says what it is built on, not
+            // which node carries it.
+            None if is_host_kind(&nodes[i].kind.to_ascii_lowercase()) => continue,
             None => {
+                let target = host_name(value);
+                if target.is_empty() {
+                    continue;
+                }
                 items.push(Item {
                     id: unique(target),
                     label: target.to_owned(),
@@ -566,7 +607,7 @@ fn architecture(title: &str, nodes: &[InfraNode], previous: Option<&Value>) -> V
     let mut x = 40.0;
     for &host in &hosts {
         let services: Vec<usize> = (0..items.len())
-            .filter(|&i| items[i].runs_on == Some(host))
+            .filter(|&i| items[i].runs_on == Some(host) && !hosts.contains(&i))
             .collect();
         let span = services.len().max(1) as f64 * PITCH_X;
         let width = node_width(&items[host].label);
@@ -656,7 +697,20 @@ fn architecture(title: &str, nodes: &[InfraNode], previous: Option<&Value>) -> V
     })
 }
 
+/// Whether `text` is the specification Archify last delivered. The skill
+/// owns the file then: regenerating it would flatten it to the map.
+fn finalized(dir: &Path, text: &str) -> bool {
+    let digest = Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    read_doc(&dir.join(ARCH_RECEIPT))
+        .and_then(|receipt| serde_json::from_str::<Value>(&receipt).ok())
+        .is_some_and(|receipt| receipt["specification"]["sha256"] == digest.as_str())
+}
+
 /// Regenerate `architecture.json` from the indexed map, keeping positions.
+/// A file Archify finalized is stored as it is.
 fn write_architecture(
     conn: &Connection,
     key: &str,
@@ -665,6 +719,12 @@ fn write_architecture(
     now: i64,
 ) -> Result<Value, String> {
     let path = dir.join(ARCH_DOC);
+    if let Some(text) = read_doc(&path).filter(|text| finalized(dir, text)) {
+        if let Ok(diagram) = serde_json::from_str::<Value>(&text) {
+            store_doc(conn, key, ARCH_DOC, &text, now)?;
+            return Ok(diagram);
+        }
+    }
     let previous = read_doc(&path)
         .or(stored_doc(conn, key, ARCH_DOC)?)
         .and_then(|text| serde_json::from_str::<Value>(&text).ok());
@@ -679,6 +739,21 @@ fn write_architecture(
         store_doc(conn, key, ARCH_DOC, &text, now)?;
     }
     Ok(next)
+}
+
+/// The page an agent rendered with Archify, if there is one.
+fn diagram_file(dir: &Path) -> Option<DiagramFile> {
+    let path = dir.join(ARCH_PAGE);
+    let meta = fs::metadata(&path).ok().filter(|meta| meta.is_file())?;
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_millis() as i64);
+    Some(DiagramFile {
+        path: path.to_string_lossy().into_owned(),
+        modified,
+    })
 }
 
 /// Keep the mount out of commits without touching the tracked `.gitignore`.
@@ -927,6 +1002,17 @@ pub struct KnowledgePage {
     shared: Vec<SharedNode>,
     /// `architecture.json`, or null before the first sync.
     architecture: Value,
+    /// The page Archify rendered, once an agent has delivered one.
+    diagram: Option<DiagramFile>,
+}
+
+/// `architecture.html` in the data folder, which the asset protocol serves.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramFile {
+    path: String,
+    /// Milliseconds since the epoch; a new render gets a new address.
+    modified: i64,
 }
 
 fn change_log(conn: &Connection, key: &str) -> Result<Vec<LoggedChange>, String> {
@@ -1003,6 +1089,7 @@ fn page(
         architecture: stored_doc(conn, &key, ARCH_DOC)?
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or(Value::Null),
+        diagram: diagram_file(&store_dir(base, &key)),
         status,
     })
 }
@@ -1160,6 +1247,45 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_host_out_of_a_remark_in_runs_on() {
+        let nodes = [
+            infra("box-1", "host", "", "Docker, project dir /srv/app"),
+            infra("api", "service", "", "box-1 (compose service api)"),
+            infra("edge", "service", "", "BOX-1, bound to loopback"),
+            infra("job", "service", "", "box-10 (cron)"),
+        ];
+        let diagram = architecture("acme", &nodes, None);
+        let components = diagram["components"].as_array().unwrap();
+        let ids: Vec<&str> = components
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["box-1", "api", "edge", "job", "box-10"]);
+        assert_eq!(components[0]["pos"][1], ROW_HOSTS);
+        assert_eq!(components[1]["pos"][1], ROW_SERVICES);
+        let connections = diagram["connections"].as_array().unwrap();
+        assert_eq!(connections.len(), 3);
+        assert!(connections
+            .iter()
+            .any(|c| c["from"] == "edge" && c["to"] == "box-1"));
+    }
+
+    #[test]
+    fn keeps_a_host_in_its_row_when_it_runs_on_another() {
+        let nodes = [
+            infra("vm-1", "vm", "", "pve-1"),
+            infra("pve-1", "host", "", ""),
+            infra("api", "service", "", "vm-1"),
+        ];
+        let diagram = architecture("acme", &nodes, None);
+        let components = diagram["components"].as_array().unwrap();
+        assert_eq!(components[0]["pos"][1], ROW_HOSTS);
+        assert_eq!(components[1]["pos"][1], ROW_HOSTS);
+        assert_ne!(components[0]["pos"][0], components[1]["pos"][0]);
+        assert_eq!(components[2]["pos"][1], ROW_SERVICES);
+    }
+
+    #[test]
     fn keeps_positions_and_places_new_nodes_clear_of_them() {
         let first = architecture("acme", &[infra("db-1", "host", "", "")], None);
         let mut moved = first.clone();
@@ -1213,6 +1339,41 @@ mod tests {
         assert_eq!(diagram["connections"][0]["label"], "runs on");
         let page = page(&mut conn, &base, &cwd, false, 3).unwrap();
         assert_eq!(page.architecture["diagram_type"], "architecture");
+        let _ = fs::remove_dir_all(project.parent().unwrap());
+    }
+
+    #[test]
+    fn leaves_a_diagram_archify_finalized() {
+        let (base, project, cwd) = scratch();
+        let mut conn = conn();
+        sync(&mut conn, &base, &cwd, true, 1).unwrap();
+        let mount_dir = project.join(MOUNT);
+        fs::write(
+            mount_dir.join(INFRA_DOC),
+            "## api\n- kind: service\n- runs on: box-1\n",
+        )
+        .unwrap();
+        let spec = r#"{"diagram_type":"architecture","components":[],"cards":[]}"#;
+        fs::write(mount_dir.join(ARCH_DOC), spec).unwrap();
+        let digest = Sha256::digest(spec.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        fs::write(
+            mount_dir.join(ARCH_RECEIPT),
+            json!({ "specification": { "sha256": digest } }).to_string(),
+        )
+        .unwrap();
+        sync(&mut conn, &base, &cwd, false, 2).unwrap();
+        assert_eq!(fs::read_to_string(mount_dir.join(ARCH_DOC)).unwrap(), spec);
+        let page = page(&mut conn, &base, &cwd, false, 3).unwrap();
+        assert!(page.architecture["cards"].is_array());
+        // An edit after the receipt hands the file back to the map.
+        fs::write(mount_dir.join(ARCH_DOC), format!("{spec}\n")).unwrap();
+        sync(&mut conn, &base, &cwd, false, 4).unwrap();
+        let text = fs::read_to_string(mount_dir.join(ARCH_DOC)).unwrap();
+        let diagram: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(diagram["components"].as_array().unwrap().len(), 2);
         let _ = fs::remove_dir_all(project.parent().unwrap());
     }
 

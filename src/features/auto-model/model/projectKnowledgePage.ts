@@ -29,6 +29,8 @@ export type KnowledgePage = {
   shared: { name: string; projects: string[] }[];
   /** `.monochrome/architecture.json`, drawn from the infrastructure map. */
   architecture: ArchitectureDiagram | null;
+  /** The Archify page an agent delivered as `.monochrome/architecture.html`. */
+  diagram: { path: string; modified: number } | null;
 };
 
 export type KnowledgeTab =
@@ -89,4 +91,22 @@ export function sharedWith(page: KnowledgePage, name: string): string[] {
       ?.projects.map((path) => path.split(/[\\/]/).filter(Boolean).pop() ?? path) ??
     []
   );
+}
+
+/**
+ * What the Diagram tab hands to an agent. Archify is an agent skill: the
+ * agent traces the system and authors the candidate, Archify renders it.
+ */
+export function diagramRequest(exists: boolean): string {
+  return [
+    exists
+      ? "Update this project's architecture diagram with the Archify skill."
+      : "Draw this project's architecture diagram with the Archify skill.",
+    "",
+    "- Trace the real system first: the repository (code, inventory, deployment and CI config, existing docs and diagrams) and .monochrome/infra.md. Show the components that matter, the boundaries they live in (hosts, groups, regions, networks) and the data and control flows between them, with source evidence for each component.",
+    "- Edit the candidate in .monochrome/architecture.json: keep the nodes that are still true where they are, remove what is gone, add what is new, and group them into the boundaries they live in.",
+    "- Set meta.output to .monochrome/architecture.html and run Archify's finalize on the candidate with this project as the repository root. Repair it until finalize passes.",
+    "- If the Archify skill is not installed, stop and tell me (npx skills add tt-a1i/archify -g). Do not draw the diagram any other way.",
+    "- Then add to .monochrome/infra.md whatever the diagram shows that the map lacks.",
+  ].join("\n");
 }

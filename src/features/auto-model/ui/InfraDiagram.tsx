@@ -1,6 +1,7 @@
 import {
   DIAGRAM_PAD,
   diagramBounds,
+  drawableComponents,
   edgeGeometry,
   pointsAttribute,
   typeColor,
@@ -9,13 +10,13 @@ import {
 
 /** Draws `.monochrome/architecture.json` at 1:1 inside a scrolling pane. */
 export function InfraDiagram({ diagram }: { diagram: ArchitectureDiagram }) {
-  const nodes = diagram.components;
+  const nodes = drawableComponents(diagram.components);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const bounds = diagramBounds(nodes);
   const edges = (diagram.connections ?? []).flatMap((edge) => {
     const from = byId.get(edge.from);
     const to = byId.get(edge.to);
-    return from && to ? [{ edge, ...edgeGeometry(from, to) }] : [];
+    return from && to ? [{ edge, ...edgeGeometry(from, to, nodes) }] : [];
   });
   return (
     <div className="overflow-auto rounded-lg border border-content/7">

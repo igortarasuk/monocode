@@ -15,6 +15,7 @@ const page: KnowledgePage = {
   changeLog: [],
   shared: [{ name: "eu-mon-1", projects: ["/work/billing", "C:\\work\\ops"] }],
   architecture: null,
+  diagram: null,
 };
 
 describe("project knowledge page", () => {

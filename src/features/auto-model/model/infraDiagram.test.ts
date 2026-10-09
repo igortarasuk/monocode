@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   diagramBounds,
+  drawableComponents,
   edgeGeometry,
   isArchitectureDiagram,
   pointsAttribute,
@@ -65,6 +66,43 @@ describe("infrastructure diagram", () => {
     const up = edgeGeometry(host, service);
     expect(up.points[0]).toEqual([340, 240]);
     expect(up.points[3]).toEqual([120, 104]);
+  });
+
+  it("joins neighbours in a row side to side", () => {
+    const next = { ...host, pos: [260, 40] as [number, number] };
+    const edge = edgeGeometry(service, next, [service, next]);
+    expect(edge.points).toEqual([
+      [200, 72],
+      [260, 72],
+    ]);
+    expect(edgeGeometry(next, service).points).toEqual([
+      [260, 72],
+      [200, 72],
+    ]);
+  });
+
+  it("lifts a row edge over the node standing between its ends", () => {
+    const between = {
+      ...service,
+      id: "db",
+      pos: [260, 40] as [number, number],
+    };
+    const far = { ...host, pos: [480, 40] as [number, number] };
+    const edge = edgeGeometry(service, far, [service, between, far]);
+    expect(edge.points).toEqual([
+      [120, 40],
+      [120, 24],
+      [560, 24],
+      [560, 40],
+    ]);
+    expect(edge.label).toEqual([340, 18]);
+  });
+
+  it("draws only the nodes that carry a box", () => {
+    const loose = { id: "note", type: "external", label: "note" };
+    expect(
+      drawableComponents([service, loose as unknown as DiagramComponent]),
+    ).toEqual([service]);
   });
 
   it("falls back to the external colour for an unknown type", () => {
